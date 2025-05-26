@@ -67,21 +67,32 @@ def extract_params(user_query):
 
     # Robustly detect any form of 'pre-owned' or 'used' in user query (case-insensitive, dash/space/none)
     preowned_pattern = r"pre[-\s]?owned|preowned|used"
+    certified_preowned_pattern = r"certified[ -]?(pre[-\s]?owned|preowned)"
     preowned_match = re.search(preowned_pattern, user_query_lower, re.IGNORECASE)
+    certified_preowned_match = re.search(certified_preowned_pattern, user_query_lower, re.IGNORECASE)
     print("[DEBUG] Preowned/used pattern match in user query:", preowned_match)
-    if preowned_match:
+    print("[DEBUG] Certified pre-owned pattern match in user query:", certified_preowned_match)
+    if certified_preowned_match or 'cpo' in user_query_lower:
+        print("[DEBUG] Setting type to 'cpo' due to certified pre-owned/cpo in user query.")
+        params['type'] = 'cpo'
+    elif preowned_match:
         print("[DEBUG] Setting type to 'used' due to user query match.")
         params['type'] = 'used'
     elif 'type' in params and params['type']:
         type_val = str(params['type']).strip().lower()
         print("[DEBUG] LLM output type value:", type_val)
         type_match = re.fullmatch(preowned_pattern, type_val, re.IGNORECASE)
+        certified_type_match = re.fullmatch(certified_preowned_pattern, type_val, re.IGNORECASE)
         print("[DEBUG] Preowned/used pattern match in LLM output type:", type_match)
-        if type_match:
+        print("[DEBUG] Certified pre-owned pattern match in LLM output type:", certified_type_match)
+        if certified_type_match or type_val == 'cpo':
+            print("[DEBUG] Setting type to 'cpo' due to LLM output type match.")
+            params['type'] = 'cpo'
+        elif type_match:
             print("[DEBUG] Setting type to 'used' due to LLM output type match.")
             params['type'] = 'used'
-        elif 'certified' in user_query_lower or 'cpo' in user_query_lower:
-            print("[DEBUG] Setting type to 'cpo' due to certified/cpo in user query.")
+        elif 'certified' in user_query_lower:
+            print("[DEBUG] Setting type to 'cpo' due to 'certified' in user query.")
             params['type'] = 'cpo'
         elif 'new' in user_query_lower:
             print("[DEBUG] Setting type to 'new' due to 'new' in user query.")
