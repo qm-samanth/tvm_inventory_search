@@ -53,10 +53,15 @@ prompt = PromptTemplate(
     ),
 )
 
-def extract_params(user_query):
-    # Step 1: Get initial params from LLM
-    formatted_prompt = prompt.format(query=user_query)
-    response = llm.invoke(formatted_prompt)
+def _get_llm_params(user_query: str, current_prompt: PromptTemplate, current_llm: OllamaLLM) -> dict:
+    """Helper function to call LLM and parse its JSON response."""
+    try:
+        formatted_prompt = current_prompt.format(query=user_query)
+        response = current_llm.invoke(formatted_prompt)
+    except Exception as e:
+        print(f"[DEBUG] Error during LLM invocation: {e}")
+        return {}
+
     try:
         # Attempt to parse the entire response as JSON
         params = json.loads(response)
@@ -74,6 +79,14 @@ def extract_params(user_query):
             return {} # Return empty if no JSON object is found
     except Exception as e:
         print(f"[DEBUG] An unexpected error occurred during LLM response processing: {e}")
+        return {}
+    return params
+
+def extract_params(user_query):
+    # Step 1: Get initial params from LLM
+    params = _get_llm_params(user_query, prompt, llm)
+    if not params: # If params is empty due to an error in _get_llm_params
+        print("[DEBUG] _get_llm_params returned empty. Aborting extract_params.")
         return {}
 
     print("[DEBUG] Initial params from LLM:", params)
