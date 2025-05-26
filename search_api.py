@@ -590,7 +590,15 @@ def build_inventory_url(base_url, params):
                 v = ",".join(str(item) for item in v)
             else:
                 continue
-        filtered[k_lower] = str(v).lower()
+        
+        # Convert current value to string and lowercase
+        val_str_lower = str(v).lower()
+
+        # If the key is 'model', replace spaces with hyphens
+        if k_lower == 'model':
+            val_str_lower = val_str_lower.replace(' ', '-')
+            
+        filtered[k_lower] = val_str_lower
     return f"{base_url}?{urlencode(filtered)}"
 
 @app.post("/api/search")
