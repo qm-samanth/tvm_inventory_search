@@ -47,7 +47,6 @@ prompt = PromptTemplate(
 )
 
 def extract_params(user_query):
-   
 
     formatted_prompt = prompt.format(query=user_query)
     response = llm.invoke(formatted_prompt)
@@ -64,6 +63,14 @@ def extract_params(user_query):
     print("[DEBUG] Extracted params from LLM:", params)
     user_query_lower = user_query.lower()
     print("[DEBUG] User query (lower):", user_query_lower)
+
+    # Correct LLM confusion: if model is a supported vehicle type, move to vehicletypes
+    if 'model' in params and params['model']:
+        model_val = str(params['model']).strip().lower()
+        if model_val in SUPPORTED_TYPES:
+            print(f"[DEBUG] Moving model '{model_val}' to vehicletypes due to LLM confusion.")
+            params['vehicletypes'] = model_val
+            params.pop('model')
 
     # Robustly detect any form of 'pre-owned' or 'used' in user query (case-insensitive, dash/space/none)
     preowned_pattern = r"pre[-\s]?owned|preowned|used"
