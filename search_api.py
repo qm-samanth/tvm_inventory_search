@@ -202,48 +202,32 @@ def extract_params(user_query):
     # ...existing code...
 
     # Step 6: Validate and filter vehicletypes
-    if 'vehicletypes' in params:
-        vt_value_from_llm = params['vehicletypes']
-        print(f"[DEBUG] LLM vehicletypes: {vt_value_from_llm}")
-        explicitly_mentioned_supported_type = None
+    # Only populate vehicletypes if a supported type is EXPLICITLY mentioned in the query.
+    if 'vehicletypes' in params: # Check if LLM even provided it as a starting point
+        llm_provided_vehicletype = params.get('vehicletypes') # Store for logging
+        print(f"[DEBUG] LLM initially provided vehicletypes: {llm_provided_vehicletype}")
+        params.pop('vehicletypes') # Remove it first, we will re-add ONLY if explicit
 
-        # Check if any supported type is mentioned as a whole word in the query
-        for vt in SUPPORTED_TYPES:
-            if re.search(rf'\b{re.escape(vt)}\b', user_query_lower):
-                explicitly_mentioned_supported_type = vt
-                print(f"[DEBUG] Found explicitly mentioned supported type in query: '{vt}'")
-                break # Take the first one found for simplicity, or decide on a strategy for multiple
-        
-        if explicitly_mentioned_supported_type:
-            # If a supported type is explicitly mentioned in the query, use that.
-            # This overrides whatever the LLM might have put in vehicletypes if it was generic or incorrect.
-            params['vehicletypes'] = explicitly_mentioned_supported_type
-            print(f"[DEBUG] Setting vehicletypes to explicitly mentioned type: '{params['vehicletypes']}'")
-        elif vt_value_from_llm:
-            # If no specific supported type was in the query, then validate LLM's output
-            current_vt_values = []
-            if isinstance(vt_value_from_llm, str):
-                current_vt_values = [v.strip().lower() for v in vt_value_from_llm.split(',')]
-            elif isinstance(vt_value_from_llm, list):
-                current_vt_values = [str(v).strip().lower() for v in vt_value_from_llm]
-
-            supported_and_mentioned_in_llm = [v for v in current_vt_values if v in SUPPORTED_TYPES]
-
-            if supported_and_mentioned_in_llm:
-                # If LLM provided valid types, use them (prefer single, then comma-separated)
-                if len(supported_and_mentioned_in_llm) == 1:
-                    params['vehicletypes'] = supported_and_mentioned_in_llm[0]
-                else:
-                    params['vehicletypes'] = ",".join(supported_and_mentioned_in_llm)
-                print(f"[DEBUG] Validated LLM vehicletypes: {params['vehicletypes']}")
-            else:
-                # If LLM output is not a supported type or empty after filtering, remove it.
-                params.pop('vehicletypes')
-                print(f"[DEBUG] Removing vehicletypes: LLM output '{vt_value_from_llm}' not in supported list or not explicitly mentioned.")
-        else:
-            # If 'vehicletypes' was present but empty from LLM and nothing explicit in query, remove.
-            params.pop('vehicletypes')
-            print("[DEBUG] Removing empty vehicletypes from params.")
+    explicitly_mentioned_supported_type = None
+    for vt in SUPPORTED_TYPES:
+        # Search for whole word matches of supported types in the user query
+        if re.search(rf'\b{re.escape(vt)}\b', user_query_lower):
+            explicitly_mentioned_supported_type = vt
+            print(f"[DEBUG] Found explicitly mentioned supported type in query: '{vt}'")
+            break # Take the first one found
+    
+    if explicitly_mentioned_supported_type:
+        params['vehicletypes'] = explicitly_mentioned_supported_type
+        print(f"[DEBUG] Setting vehicletypes to explicitly mentioned supported type: '{params['vehicletypes']}'")
+    else:
+        # If 'vehicletypes' was removed and no explicit type was found, it remains absent.
+        # If LLM provided something but it wasn't explicit, it's now gone.
+        print(f"[DEBUG] No explicitly mentioned supported type found in query. 'vehicletypes' will not be included unless it was already handled (e.g. model moved to vehicletypes).")
+        # Ensure it's really gone if it wasn't set by explicit mention
+        if 'vehicletypes' in params and params['vehicletypes'] != explicitly_mentioned_supported_type:
+             # This case should ideally not be hit if logic is correct, but as a safeguard:
+             print(f"[DEBUG] Redundant check: Removing vehicletypes as it was not set by explicit mention.")
+             params.pop('vehicletypes')
 
     # Step 7: Year logic and inferring type=used
     current_year = datetime.datetime.now().year
