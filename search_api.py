@@ -75,6 +75,89 @@ def extract_params(user_query):
     user_query_lower = user_query.lower()
     print("[DEBUG] User query (lower):", user_query_lower)
 
+    # --- Start of Price Logic Refinement ---
+
+    def is_effectively_none_or_absent(param_val):
+        if param_val is None:
+            return True
+        if isinstance(param_val, str) and param_val.strip().lower() in ["", "null", "none"]:
+            return True
+        return False
+
+    def normalize_price_for_comparison(val_str):
+        if is_effectively_none_or_absent(val_str):
+            return None
+        s = str(val_str).lower().strip().replace("$", "").replace(",", "")
+        # Check for null-like strings again after initial cleaning, though is_effectively_none_or_absent should catch most.
+        if s in ["null", "none"]: return None
+
+        multiplier = 1
+        if s.endswith('k'): 
+            multiplier = 1000; s = s[:-1].strip()
+        elif s.endswith('m'): 
+            multiplier = 1000000; s = s[:-1].strip()
+        
+        if not s or s in ["null", "none"]: return None # Check if s became empty or null-like after k/m processing
+        
+        try:
+            return float(s) * multiplier
+        except ValueError:
+            print(f"[DEBUG] normalize_price_for_comparison: ValueError converting '{s}' to float.")
+            return None
+
+    upper_bound_keywords = ["under ", "less than ", "at most ", "maximum ", " up to "]
+    query_has_upper_bound_keyword = any(keyword in user_query_lower for keyword in upper_bound_keywords)
+
+    lower_bound_keywords = ["over ", "starting at ", "more than ", "at least ", "minimum "]
+    query_has_lower_bound_keyword = any(keyword in user_query_lower for keyword in lower_bound_keywords)
+
+    llm_paymentmin = params.get("paymentmin")
+    llm_paymentmax = params.get("paymentmax")
+
+    # 1. Correction: If query implies "under X" (upper bound) but LLM provides only paymentmin (or paymentmax is effectively absent)
+    if query_has_upper_bound_keyword and not query_has_lower_bound_keyword:
+        if not is_effectively_none_or_absent(llm_paymentmin) and is_effectively_none_or_absent(llm_paymentmax):
+            print(f"[DEBUG] Query implies 'under X'. LLM provided paymentmin ('{llm_paymentmin}') but paymentmax is effectively absent/null ('{llm_paymentmax}'). Swapping paymentmin to paymentmax.")
+            params["paymentmax"] = params.pop("paymentmin")
+            llm_paymentmax = params.get("paymentmax") # Update local var
+            llm_paymentmin = None # paymentmin was popped
+            if "paymentmin" in params: params.pop("paymentmin") # Ensure it is gone
+
+    # 2. Correction: If query implies "over X" (lower bound) but LLM provides only paymentmax (or paymentmin is effectively absent)
+    elif query_has_lower_bound_keyword and not query_has_upper_bound_keyword:
+         if not is_effectively_none_or_absent(llm_paymentmax) and is_effectively_none_or_absent(llm_paymentmin):
+            print(f"[DEBUG] Query implies 'over X'. LLM provided paymentmax ('{llm_paymentmax}') but paymentmin is effectively absent/null ('{llm_paymentmin}'). Swapping paymentmax to paymentmin.")
+            params["paymentmin"] = params.pop("paymentmax")
+            llm_paymentmin = params.get("paymentmin") # Update local var
+            llm_paymentmax = None # paymentmax was popped
+            if "paymentmax" in params: params.pop("paymentmax") # Ensure it is gone
+
+    # 3. Handle cases where LLM might have set paymentmin == paymentmax for "under X" queries,
+    #    or paymentmin > paymentmax. This runs *after* potential swaps above.
+    #    Re-fetch current min/max from params dict as they might have changed.
+    current_paymentmin_val = params.get("paymentmin")
+    current_paymentmax_val = params.get("paymentmax")
+
+    if not is_effectively_none_or_absent(current_paymentmin_val) and not is_effectively_none_or_absent(current_paymentmax_val):
+        if query_has_upper_bound_keyword and not query_has_lower_bound_keyword: # Specifically for "under X"
+            norm_min = normalize_price_for_comparison(current_paymentmin_val)
+            norm_max = normalize_price_for_comparison(current_paymentmax_val)
+
+            if norm_min is not None and norm_min == norm_max and norm_min != 0:
+                print(f"[DEBUG] Query implies 'under X' and paymentmin ('{current_paymentmin_val}') == paymentmax ('{current_paymentmax_val}'). Unsetting paymentmin to allow defaulting to 0.")
+                params.pop("paymentmin")
+            elif norm_min is not None and norm_max is not None and norm_min > norm_max:
+                print(f"[DEBUG] For 'under X' query, paymentmin ('{current_paymentmin_val}') > paymentmax ('{current_paymentmax_val}'). This is illogical. Removing paymentmin.")
+                params.pop("paymentmin")
+        else: # General check for min > max (not specific to "under X", could be LLM error on a range)
+            norm_min = normalize_price_for_comparison(current_paymentmin_val)
+            norm_max = normalize_price_for_comparison(current_paymentmax_val)
+            if norm_min is not None and norm_max is not None and norm_min > norm_max:
+                print(f"[DEBUG] paymentmin ('{current_paymentmin_val}') > paymentmax ('{current_paymentmax_val}'). This is generally illogical. Removing paymentmin.")
+                params.pop("paymentmin")
+    
+    # --- End of Price Logic Refinement ---
+
     # Step 2: Correct LLM confusion: if model is a supported vehicle type, move to vehicletypes
     if 'model' in params and params['model']:
         model_val = str(params['model']).strip().lower()
@@ -86,25 +169,31 @@ def extract_params(user_query):
 
     # Step 5: Price field handling. LLM should provide 'paymentmin' and 'paymentmax' directly from prompt.
     # Minimal fallbacks for older LLM behavior or misinterpretations:
-    if 'maximum price' in params and 'paymentmax' not in params: # If LLM used old key
-        params['paymentmax'] = params.pop('maximum price')
-        print(f"[DEBUG] Fallback: Mapped 'maximum price' to 'paymentmax'")
+    if 'maximum price' in params and is_effectively_none_or_absent(params.get('paymentmax')): 
+        val = params.pop('maximum price')
+        if not is_effectively_none_or_absent(val):
+            params['paymentmax'] = val
+            print(f"[DEBUG] Fallback: Mapped 'maximum price' to 'paymentmax'")
 
-    if 'price' in params: # If LLM used generic 'price' key
-        # This is a basic fallback. If 'price' exists and paymentmin/max are not set by LLM,
-        # we assume 'price' might be a single max value.
-        # Complex range parsing from 'price' is best handled by LLM via the new prompt.
-        if 'paymentmax' not in params and 'paymentmin' not in params:
-            params['paymentmax'] = params['price'] # Value will be cleaned in Step 5.1
-            print(f"[DEBUG] Fallback: Assuming 'price' field ('{params.get('paymentmax')}') is for 'paymentmax'")
-        # Remove 'price' as it's either used or superseded by direct paymentmin/max
-        if 'price' in params: # check again as it might have been popped if used for paymentmax
-             params.pop('price')
+    if 'price' in params: 
+        price_val = params.get('price')
+        if not is_effectively_none_or_absent(price_val):
+            # Only use 'price' if both paymentmin and paymentmax are still effectively absent after refinements
+            if is_effectively_none_or_absent(params.get('paymentmin')) and is_effectively_none_or_absent(params.get('paymentmax')):
+                if query_has_lower_bound_keyword and not query_has_upper_bound_keyword:
+                    params['paymentmin'] = price_val
+                    print(f"[DEBUG] Fallback: Assuming 'price' field ('{price_val}') is for 'paymentmin' due to lower-bound keywords.")
+                else: 
+                    params['paymentmax'] = price_val
+                    print(f"[DEBUG] Fallback: Assuming 'price' field ('{price_val}') is for 'paymentmax'.")
+        # Always pop 'price' after considering it
+        if 'price' in params: params.pop('price')
 
-    # Default paymentmin to 0 if paymentmax is present and paymentmin was not set by LLM/fallback
-    if 'paymentmax' in params and params.get('paymentmin') is None: # Check for None, as 0 is a valid value
-        params['paymentmin'] = 0 # Default to 0
-        print(f"[DEBUG] Defaulted paymentmin to 0 as paymentmax is present and paymentmin was not set.")
+    # Default paymentmin to 0 if paymentmax is present (and not effectively absent) 
+    # and paymentmin is effectively absent (or was unset by prior logic).
+    if not is_effectively_none_or_absent(params.get('paymentmax')) and is_effectively_none_or_absent(params.get('paymentmin')):
+        params['paymentmin'] = 0 
+        print(f"[DEBUG] Defaulted paymentmin to 0 as paymentmax is present and paymentmin was effectively absent.")
 
     # Step 5.1: Normalize 'paymentmin' and 'paymentmax' values
     for pay_key in ["paymentmin", "paymentmax"]:
@@ -197,9 +286,6 @@ def extract_params(user_query):
             params.pop('type')
         else:
             print(f"[DEBUG] No explicit type in query, and LLM did not provide 'type'. 'type' remains unset before year logic.")
-
-    # Step 5: Map price fields
-    # ...existing code...
 
     # Step 6: Validate and filter vehicletypes
     # Only populate vehicletypes if a supported type is EXPLICITLY mentioned in the query.
