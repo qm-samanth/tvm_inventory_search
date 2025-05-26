@@ -17,6 +17,11 @@
         <button type="submit">Search</button>
     </form>
     <div id="result"></div>
+
+    <div id="test-results">
+        <!-- Test results will be loaded here by JavaScript -->
+    </div>
+
     <script>
         document.getElementById('searchForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -38,6 +43,128 @@
                 resultDiv.textContent = 'Error: ' + err.message;
             }
         });
+    </script>
+    <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const testQueries = [
+            "New Honda cars for sale",
+"Used Honda Civic for sale",
+"Pre-owned Honda CR-V",
+"Second-hand Honda Accord Hybrid",
+"Brand new Honda Pilot",
+"Certified pre-owned Honda Odyssey",
+"Used Hondas under $20,000",
+"Honda Civic",
+"Honda CR-V",
+"Honda Accord",
+"Honda Pilot",
+"Honda HR-V",
+"Honda cars under $30,000",
+"Affordable Honda SUVs",
+"Used Honda Accord under $15,000",
+"New Honda CR-V price",
+"Cheapest new Honda sedan",
+"Honda vehicles between $25,000 and $35,000",
+"Honda electric vehicle or Honda EV",
+"Honda hybrid cars",
+"Gas Honda SUVs",
+"Honda SUV for sale",
+"Honda sedan",
+"Honda hatchback",
+"Honda minivan",
+"Honda truck",
+"2023 Honda CR-V",
+"Low mileage Honda Accord",
+"Used Honda from 2020 or newer",
+"Honda cars with less than 75,000 miles",
+"Honda with Apple CarPlay and Android Auto",
+"Honda with sunroof",
+"Honda cars with leather seats",
+"Honda Sensing equipped vehicles",
+"Honda with navigation system",
+"AWD Honda Passport",
+"Honda with heated seats",
+"Best Honda for a family",
+"Reliable used Honda models",
+"Honda for commuting",
+"Good value Honda cars",
+"Honda with best cargo space",
+"Used red Honda Civic Si manual under $25,000",
+"New Honda CR-V Hybrid AWD EX-L",
+"2022 Honda Odyssey Elite with low mileage",
+"Automatic Honda Pilot with third row seating",
+"Electric Honda SUV in California"
+        ];
+
+        const resultsContainer = document.getElementById('test-results'); 
+
+        if (!resultsContainer) {
+            console.error('Error: Could not find results container with id "test-results"');
+            // Fallback: Prepend an error message to the body if the container is missing.
+            const errorDiv = document.createElement('div');
+            errorDiv.style.color = 'red';
+            errorDiv.textContent = 'Critical Error: Results container (div with id="test-results") was not found. Please check HTML structure.';
+            document.body.insertBefore(errorDiv, document.body.firstChild);
+            return;
+        }
+
+        resultsContainer.innerHTML = '<h2>Test Query Results:</h2>';
+
+        for (const query of testQueries) {
+            try {
+                // Assuming your FastAPI server runs on localhost:8000
+                // If it's different, or if search_frontend.html is served by FastAPI itself,
+                // you might be able to use a relative path like '/api/search'
+                const response = await fetch('http://localhost:8000/api/search', { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: query }),
+                });
+
+                const resultDiv = document.createElement('div');
+                resultDiv.style.marginBottom = '10px';
+                resultDiv.style.padding = '5px';
+                resultDiv.style.border = '1px solid #eee';
+
+                const queryPara = document.createElement('p');
+                queryPara.innerHTML = `<strong>Query:</strong> ${query}`;
+                resultDiv.appendChild(queryPara);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const urlPara = document.createElement('p');
+                    if (data.url) { // Check for 'url' key
+                        urlPara.innerHTML = `<strong>Result URL:</strong> <a href="${data.url}" target="_blank">${data.url}</a>`;
+                    } else if (data.error) {
+                        urlPara.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                        urlPara.style.color = 'orange';
+                    } else {
+                         urlPara.innerHTML = `<strong>Result URL:</strong> No URL returned or unexpected response format. API Response: ${JSON.stringify(data)}`;
+                    }
+                    resultDiv.appendChild(urlPara);
+                } else {
+                    const errorText = await response.text();
+                    const errorPara = document.createElement('p');
+                    errorPara.style.color = 'red';
+                    errorPara.innerHTML = `<strong>Error fetching URL:</strong> ${response.status} - ${errorText}`;
+                    resultDiv.appendChild(errorPara);
+                }
+                resultsContainer.appendChild(resultDiv);
+
+            } catch (error) {
+                console.error('Error processing query:', query, error);
+                const errorDiv = document.createElement('div');
+                errorDiv.style.marginBottom = '10px';
+                errorDiv.style.padding = '5px';
+                errorDiv.style.border = '1px solid #eee';
+                errorDiv.style.color = 'red';
+                errorDiv.innerHTML = `<p><strong>Query:</strong> ${query}</p><p><strong>JavaScript Error:</strong> ${error.message}</p>`;
+                resultsContainer.appendChild(errorDiv);
+            }
+        }
+    });
     </script>
 </body>
 </html>
