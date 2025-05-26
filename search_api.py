@@ -511,6 +511,15 @@ def extract_params(user_query):
              print(f"[DEBUG] Redundant check: Removing vehicletypes as it was not set by explicit mention.")
              params.pop('vehicletypes')
 
+    # Step 6.1: Prevent model from being the same as vehicletype
+    current_model = params.get('model')
+    current_vehicletype = params.get('vehicletypes')
+
+    if current_model and current_vehicletype and isinstance(current_model, str) and \
+       current_model.lower() == current_vehicletype.lower():
+        print(f"[DEBUG] Model ('{current_model}') is the same as vehicletypes ('{current_vehicletype}'). Removing model.")
+        params.pop('model')
+
     # Step 7: Year logic and inferring type=used
     current_year = datetime.datetime.now().year
     if 'year' in params:
