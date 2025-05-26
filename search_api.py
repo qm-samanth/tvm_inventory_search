@@ -61,20 +61,36 @@ def extract_params(user_query):
             # If parsing fails, return empty params or raise
             return {}
 
-    # Debug: print params to verify year and type logic
     print("[DEBUG] Extracted params from LLM:", params)
-
-
-    # Map 'type' based on user query keywords
     user_query_lower = user_query.lower()
-    if 'type' in params and params['type']:
-        if 'certified' in user_query_lower or 'cpo' in user_query_lower:
-            params['type'] = 'cpo'
-        elif 'used' in user_query_lower:
+    print("[DEBUG] User query (lower):", user_query_lower)
+
+    # Robustly detect any form of 'pre-owned' or 'used' in user query (case-insensitive, dash/space/none)
+    preowned_pattern = r"pre[-\s]?owned|preowned|used"
+    preowned_match = re.search(preowned_pattern, user_query_lower, re.IGNORECASE)
+    print("[DEBUG] Preowned/used pattern match in user query:", preowned_match)
+    if preowned_match:
+        print("[DEBUG] Setting type to 'used' due to user query match.")
+        params['type'] = 'used'
+    elif 'type' in params and params['type']:
+        type_val = str(params['type']).strip().lower()
+        print("[DEBUG] LLM output type value:", type_val)
+        type_match = re.fullmatch(preowned_pattern, type_val, re.IGNORECASE)
+        print("[DEBUG] Preowned/used pattern match in LLM output type:", type_match)
+        if type_match:
+            print("[DEBUG] Setting type to 'used' due to LLM output type match.")
             params['type'] = 'used'
+        elif 'certified' in user_query_lower or 'cpo' in user_query_lower:
+            print("[DEBUG] Setting type to 'cpo' due to certified/cpo in user query.")
+            params['type'] = 'cpo'
         elif 'new' in user_query_lower:
+            print("[DEBUG] Setting type to 'new' due to 'new' in user query.")
             params['type'] = 'new'
+        elif 'used' in user_query_lower:
+            print("[DEBUG] Setting type to 'used' due to 'used' in user query.")
+            params['type'] = 'used'
         else:
+            print("[DEBUG] Removing type from params due to no match.")
             params.pop('type')
 
     # Map maximum price to paymentmax and set paymentmin=0 if only max is present
@@ -87,26 +103,31 @@ def extract_params(user_query):
         params['paymentmin'] = 0
         params.pop('price')
 
-    # Remove vehicletypes if not explicitly mentioned in the query or if value is not supported
+    # Only include vehicletypes if a supported type is explicitly mentioned as a whole word in the user query
     if 'vehicletypes' in params:
         vt_value = params['vehicletypes']
-        # Only keep vehicletypes if explicitly mentioned in the user query (whole word match)
         mentioned = False
         for vt in SUPPORTED_TYPES:
-            if re.search(rf'\\b{re.escape(vt)}\\b', user_query.lower()):
+            vt_match = re.search(rf'\b{re.escape(vt)}\b', user_query_lower)
+            print(f"[DEBUG] Checking vehicle type '{vt}': match={vt_match}")
+            if vt_match:
                 mentioned = True
                 break
         if not mentioned:
+            print("[DEBUG] Removing vehicletypes from params: not explicitly mentioned in user query.")
             params.pop('vehicletypes')
         else:
             # If it's a list, check all values; if string, check directly
             if isinstance(vt_value, list):
                 vt_value = [v for v in vt_value if v in SUPPORTED_TYPES]
+                print(f"[DEBUG] Filtered vehicletypes list: {vt_value}")
                 if vt_value:
                     params['vehicletypes'] = vt_value[0] if len(vt_value) == 1 else ",".join(vt_value)
                 else:
+                    print("[DEBUG] Removing vehicletypes from params: no supported types in list.")
                     params.pop('vehicletypes')
             elif vt_value not in SUPPORTED_TYPES:
+                print(f"[DEBUG] Removing vehicletypes from params: '{vt_value}' not supported.")
                 params.pop('vehicletypes')
 
     # If year is present, less than current year, and no type, set type=used
@@ -114,47 +135,13 @@ def extract_params(user_query):
     if 'year' in params:
         try:
             year_val = int(str(params['year']).strip())
+            print(f"[DEBUG] Year in params: {year_val}, current year: {current_year}")
             if year_val < current_year and 'type' not in params:
+                print("[DEBUG] Setting type to 'used' due to year < current year and no type present.")
                 params['type'] = 'used'
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[DEBUG] Exception parsing year: {e}")
     # (Removed duplicate/stray return params outside function)
-
-    # Map 'type' based on user query keywords
-    user_query_lower = user_query.lower()
-    if 'type' in params and params['type']:
-        if 'certified' in user_query_lower or 'cpo' in user_query_lower:
-            params['type'] = 'cpo'
-        elif 'used' in user_query_lower:
-            params['type'] = 'used'
-        elif 'new' in user_query_lower:
-            params['type'] = 'new'
-        else:
-            params.pop('type')
-
-    # Map maximum price to paymentmax and set paymentmin=0 if only max is present
-    if 'maximum price' in params:
-        params['paymentmax'] = params['maximum price']
-        params['paymentmin'] = 0
-        params.pop('maximum price')
-    elif 'price' in params:
-        params['paymentmax'] = params['price']
-        params['paymentmin'] = 0
-        params.pop('price')
-
-    # Remove vehicletypes if not explicitly mentioned in the query or if value is not supported
-    if 'vehicletypes' in params:
-        vt_value = params['vehicletypes']
-        # If it's a list, check all values; if string, check directly
-        if isinstance(vt_value, list):
-            vt_value = [v for v in vt_value if v in SUPPORTED_TYPES]
-            if vt_value:
-                params['vehicletypes'] = vt_value[0] if len(vt_value) == 1 else ",".join(vt_value)
-            else:
-                params.pop('vehicletypes')
-        elif vt_value not in SUPPORTED_TYPES:
-            params.pop('vehicletypes')
-
     return params
 
 def build_inventory_url(base_url, params):
