@@ -1,146 +1,31 @@
 import datetime
-import csv # Added for CSV loading
-
-ALLOWED_PARAMS = {
-    'year', 'make', 'model', 'trim', 'color', 'vehicletypes', 'transmissions',
-    'featuresubcategories', 'paymentmax', 'paymentmin', 'type',
-    'mileagemin', 'mileagemax' # Added mileage params
-}
-SUPPORTED_TYPES = [
-    'convertible', 'coupe', 'suv', 'sedan', 'truck', 'van', 'wagon', 'hatchback', 'mpv'
-]
-
-MODEL_TO_MAKE_DATA = {} # Global dict to store loaded CSV data
-
-# --- Start of Top-Level Helper Functions ---
-def is_effectively_none_or_absent(param_val):
-    if param_val is None:
-        return True
-    if isinstance(param_val, str) and param_val.strip().lower() in ["", "null", "none"]:
-        return True
-    return False
-
-def normalize_price_for_comparison(val_str):
-    if is_effectively_none_or_absent(val_str):
-        return None
-    s = str(val_str).lower().strip().replace("$", "").replace(",", "")
-    if s in ["null", "none"]: return None
-
-    multiplier = 1
-    if s.endswith('k'): 
-        multiplier = 1000; s = s[:-1].strip()
-    elif s.endswith('m'): 
-        multiplier = 1000000; s = s[:-1].strip()
-    
-    if not s or s in ["null", "none"]: return None
-    
-    try:
-        return float(s) * multiplier
-    except ValueError:
-        print(f"[DEBUG] normalize_price_for_comparison: ValueError converting '{s}' to float.")
-        return None
-
-MILEAGE_VALUE_STRIP_KEYWORDS = [
-    "under ", "less than ", "at most ", "maximum ", " up to ", "below ",
-    "over ", "starting at ", "more than ", "at least ", "minimum "
-]
-
-def strip_mileage_keywords_from_value(val_str_input):
-    s = str(val_str_input).lower().strip() # Work with lowercase
-    for keyword in MILEAGE_VALUE_STRIP_KEYWORDS:
-        if s.startswith(keyword):
-            s = s[len(keyword):].strip()
-            break
-    return s
-
-def normalize_mileage_for_internal_comparison(val_str_input):
-    if is_effectively_none_or_absent(val_str_input):
-        return None
-    
-    s = str(val_str_input)
-    s = strip_mileage_keywords_from_value(s)
-    s = s.lower().strip().replace(",", "")
-
-    if s.endswith('k'):
-        s = s[:-1].strip()
-        try: return float(s) * 1000 if s else None
-        except ValueError: return None
-    elif "miles".casefold() in s: 
-        s = s.replace("miles","").strip()
-
-    if not s or s in ["null", "none"]: return None
-    try:
-        return float(s)
-    except ValueError:
-        print(f"[DEBUG] normalize_mileage_for_internal_comparison: ValueError converting '{s}' (original: '{val_str_input}') to float.")
-        return None
-
-def normalize_value_for_collision_check(val_str_input):
-    if is_effectively_none_or_absent(val_str_input):
-        return None
-    
-    s = str(val_str_input)
-    s_temp_mileage_norm = strip_mileage_keywords_from_value(s)
-    s_temp_mileage_norm = s_temp_mileage_norm.lower().replace(",", "").replace("miles", "").strip()
-    s_temp_price_norm = s.lower().replace("$","").replace(",","").strip()
-
-    if len(s_temp_mileage_norm) < len(s_temp_price_norm) and s_temp_mileage_norm.replace('.','',1).isdigit():
-        s_for_num = s_temp_mileage_norm
-    else:
-        s_for_num = s_temp_price_norm
-    
-    multiplier = 1
-    if s_for_num.endswith('k'):
-        multiplier = 1000; s_for_num = s_for_num[:-1].strip()
-    elif s_for_num.endswith('m'):
-        multiplier = 1000000; s_for_num = s_for_num[:-1].strip()
-
-    if not s_for_num or not s_for_num.replace('.','',1).isdigit():
-        num_val = normalize_mileage_for_internal_comparison(str(val_str_input))
-        return num_val
-
-    try:
-        return float(s_for_num) * multiplier
-    except ValueError:
-        print(f"[DEBUG] normalize_value_for_collision_check: ValueError converting '{s_for_num}' (original: '{val_str_input}')")
-        return None
-# --- End of Top-Level Helper Functions ---
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_ollama import OllamaLLM
-from langchain.prompts import PromptTemplate
 from urllib.parse import urlencode
 import json
 import re
 
+# Imports from our new modules
+from llm_interface import get_llm_params_from_query # Changed to absolute import
+from utils import (
+    is_effectively_none_or_absent,
+    normalize_price_for_comparison,
+    strip_mileage_keywords_from_value,
+    normalize_mileage_for_internal_comparison,
+    normalize_value_for_collision_check,
+    load_model_make_mapping_from_csv,
+    MODEL_TO_MAKE_DATA, # Import the dictionary itself
+    ALLOWED_PARAMS,
+    SUPPORTED_TYPES
+) # Changed to absolute import
+
 app = FastAPI()
 
 @app.on_event("startup")
-async def load_model_make_mapping():
-    """Load model to make mapping from CSV file on application startup."""
-    global MODEL_TO_MAKE_DATA
-    mapping_file_path = "model_make_map.csv" # Assuming it's in the same directory as search_api.py
-    try:
-        with open(mapping_file_path, mode='r', encoding='utf-8') as infile:
-            reader = csv.reader(infile)
-            # Skip header if present (optional, depends on your CSV structure)
-            # next(reader, None) 
-            for rows in reader:
-                if len(rows) == 2:
-                    # CSV format is Make,Model (rows[0] is Make, rows[1] is Model)
-                    # We want MODEL_TO_MAKE_DATA to be {model_key: make_value}
-                    make_from_csv = rows[0].strip().lower()
-                    model_from_csv = rows[1].strip().lower()
-                    
-                    if model_from_csv and make_from_csv: # Ensure no empty strings after stripping
-                        MODEL_TO_MAKE_DATA[model_from_csv] = make_from_csv
-        print(f"[INFO] Successfully loaded {len(MODEL_TO_MAKE_DATA)} model-make mappings from {mapping_file_path}")
-    except FileNotFoundError:
-        print(f"[ERROR] {mapping_file_path} not found. Model-make correction will not work.")
-    except Exception as e:
-        print(f"[ERROR] Failed to load {mapping_file_path}: {e}")
+async def startup_event():
+    """Load model to make mapping on application startup."""
+    load_model_make_mapping_from_csv() # Call the function from utils
 
 # Allow CORS for all origins (for development)
 app.add_middleware(
@@ -153,64 +38,11 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     query: str
 
-llm = OllamaLLM(model="llama3.2")
-
-prompt = PromptTemplate(
-    input_variables=["query"],
-    template=(
-        "Extract the following fields from this vehicle search query, but ONLY include a field if it is explicitly mentioned in the query: "
-        "year, make, model, trim, color, vehicle type, transmission, features, mileage, and type (used/new/certified). "
-        "Also extract price information: if a price range like 'between X and Y' or 'X to Y' is given, populate 'paymentmin' with X and 'paymentmax' with Y. "
-        "If only one price is mentioned (e.g., 'under X', 'around X', 'less than X', 'at most X', 'below X'), populate 'paymentmax' with X. " # Added below
-        "If the query says 'over X', 'starting at X', 'more than X', 'at least X'), populate 'paymentmin' with X. "
-        "Also extract mileage information: if a mileage range like 'between X and Y miles' or 'X to Y miles' is given, populate 'mileagemin' with X and 'mileagemax' with Y. "
-        "If only one mileage is mentioned (e.g., 'under X miles', 'less than X miles', 'at most X miles', 'below X miles'), populate 'mileagemax' with X. " # Added below
-        "If the query says 'over X miles', 'starting at X miles', 'more than X miles', 'at least X miles'), populate 'mileagemin' with X. "
-        "Supported vehicle types are: convertible, coupe, suv, sedan, truck, van, wagon, hatchback, mpv. "
-        "If the query uses generic terms like 'car', 'cars', 'vehicle', or 'vehicles', do not include any value for 'vehicletypes' unless a specific supported type is also mentioned. "
-        "Do NOT guess or fill in any values that are not present in the query. "
-        "Return ONLY a single, valid JSON object. The JSON object must be pure JSON and must NOT contain any comments, explanations, or any other non-JSON text within it or around it. "
-        "Use these keys in the JSON: 'year', 'make', 'model', 'trim', 'color', 'vehicletypes' (for vehicle type), "
-        "'transmissions' (for transmission), 'featuresubcategories' (for features), 'type', 'paymentmin', 'paymentmax', "
-        "'mileagemin', 'mileagemax'. All keys and string values in the JSON should be lowercase. "
-        "Query: {query}"
-    ),
-)
-
-def _get_llm_params(user_query: str, current_prompt: PromptTemplate, current_llm: OllamaLLM) -> dict:
-    """Helper function to call LLM and parse its JSON response."""
-    try:
-        formatted_prompt = current_prompt.format(query=user_query)
-        response = current_llm.invoke(formatted_prompt)
-    except Exception as e:
-        print(f"[DEBUG] Error during LLM invocation: {e}")
-        return {}
-
-    try:
-        # Attempt to parse the entire response as JSON
-        params = json.loads(response)
-    except json.JSONDecodeError:
-        # If direct parsing fails, try to extract JSON from a string that might contain other text
-        match = re.search(r'\{.*\}', response, re.DOTALL)
-        if match:
-            try:
-                params = json.loads(match.group(0))
-            except json.JSONDecodeError:
-                print(f"[DEBUG] Failed to parse extracted JSON: {match.group(0)}")
-                return {} # Return empty if LLM output is not parsable JSON
-        else:
-            print(f"[DEBUG] No JSON object found in LLM response: {response}")
-            return {} # Return empty if no JSON object is found
-    except Exception as e:
-        print(f"[DEBUG] An unexpected error occurred during LLM response processing: {e}")
-        return {}
-    return params
-
 def extract_params(user_query):
     # Step 1: Get initial params from LLM
-    params = _get_llm_params(user_query, prompt, llm)
+    params = get_llm_params_from_query(user_query) # Use the new function from llm_interface
     if not params: # If params is empty due to an error in _get_llm_params
-        print("[DEBUG] _get_llm_params returned empty. Aborting extract_params.")
+        print("[DEBUG] get_llm_params_from_query returned empty. Aborting extract_params.")
         return {}
 
     print("[DEBUG] Initial params from LLM:", params)
@@ -223,16 +55,16 @@ def extract_params(user_query):
 
     # Diagnostic prints
     print(f"[DIAGNOSTIC] llm_make_val before correction: '{llm_make_val}', llm_model_val before correction: '{llm_model_val}'")
-    if not MODEL_TO_MAKE_DATA:
-        print("[DIAGNOSTIC] MODEL_TO_MAKE_DATA is empty or not loaded. Skipping make/model correction.")
-    # print(f"[DIAGNOSTIC] MODEL_TO_MAKE_DATA has {len(MODEL_TO_MAKE_DATA)} entries.") # Optional: for verbosity
+    if not MODEL_TO_MAKE_DATA: # Use MODEL_TO_MAKE_DATA from utils.py
+        print("[DIAGNOSTIC] utils.MODEL_TO_MAKE_DATA is empty or not loaded. Skipping make/model correction.")
+    # print(f"[DIAGNOSTIC] utils.MODEL_TO_MAKE_DATA has {len(MODEL_TO_MAKE_DATA)} entries.") # Optional: for verbosity
 
     if MODEL_TO_MAKE_DATA and isinstance(llm_make_val, str): # Only proceed if mapping exists and llm_make_val is a string
         llm_make_lower = llm_make_val.lower()
         
-        if llm_make_lower in MODEL_TO_MAKE_DATA:
-            true_make_from_csv = MODEL_TO_MAKE_DATA[llm_make_lower]
-            # potential_model_name_if_llm_misplaced is llm_make_val itself, as it's the value LLM put in the 'make' field.
+        if llm_make_lower in MODEL_TO_MAKE_DATA: # Use MODEL_TO_MAKE_DATA from utils.py
+            true_make_from_csv = MODEL_TO_MAKE_DATA[llm_make_lower] # Use MODEL_TO_MAKE_DATA from utils.py
+            # potential_model_name_if_llm_misplaced is llm_make_val itself, as it\'s the value LLM put in the \'make\' field.
             potential_model_name_if_llm_misplaced = llm_make_val 
 
             print(f"[DIAGNOSTIC] Candidate for make correction: llm_make_val='{llm_make_val}', llm_make_lower='{llm_make_lower}', maps to true_make_from_csv='{true_make_from_csv}'")
@@ -287,8 +119,8 @@ def extract_params(user_query):
                 print(f"[DEBUG] Make/Model appears correct or not fitting primary correction criteria. LLM make: '{llm_make_val}', LLM model: '{llm_model_val}'. No changes made by this correction block.")
         else:
             # llm_make_val (lowercase) was not found as a key in MODEL_TO_MAKE_DATA.
-            print(f"[DIAGNOSTIC] llm_make_val ('{llm_make_val}') not found as a key in MODEL_TO_MAKE_DATA. No make/model correction based on it.")
-    elif not MODEL_TO_MAKE_DATA:
+            print(f"[DIAGNOSTIC] llm_make_val ('{llm_make_val}') not found as a key in utils.MODEL_TO_MAKE_DATA. No make/model correction based on it.")
+    elif not MODEL_TO_MAKE_DATA: # Use MODEL_TO_MAKE_DATA from utils.py
         pass # Diagnostic already printed if MODEL_TO_MAKE_DATA is empty
     elif not isinstance(llm_make_val, str):
         # llm_make_val was not a string (e.g., None, or some other type from LLM).
@@ -664,7 +496,7 @@ def extract_params(user_query):
         params.pop('vehicletypes') # Remove it first, we will re-add ONLY if explicit
 
     explicitly_mentioned_supported_type = None
-    for vt in SUPPORTED_TYPES:
+    for vt in SUPPORTED_TYPES: # Use SUPPORTED_TYPES from utils.py
         # Search for whole word matches of supported types in the user query
         if re.search(rf'\b{re.escape(vt)}\b', user_query_lower):
             explicitly_mentioned_supported_type = vt
@@ -722,7 +554,7 @@ def extract_params(user_query):
     # Also remove keys not in ALLOWED_PARAMS (though build_inventory_url also does this)
     final_params = {}
     for k, v in params.items():
-        if k in ALLOWED_PARAMS and v is not None and v != '' and v != [] and v != {}:
+        if k in ALLOWED_PARAMS and v is not None and v != '' and v != [] and v != {}: # Use ALLOWED_PARAMS from utils.py
             # Specific check for string "null" or "none" which might come from LLM
             if isinstance(v, str) and v.strip().lower() in ['null', 'none']:
                 print(f"[DEBUG] Removing param '{k}' with value '{v}'")
@@ -737,9 +569,9 @@ def build_inventory_url(base_url, params):
     filtered = {}
     for k, v in params.items():
         k_lower = k.lower()
-        if k_lower not in ALLOWED_PARAMS:
+        if k_lower not in ALLOWED_PARAMS: # Use ALLOWED_PARAMS from utils.py
             continue  # Skip any param not in the allowed list
-        # Skip None, empty, or string 'null'/'none' (case-insensitive)
+        # Skip None, empty, or string \'null\'/\'none\' (case-insensitive)
         if v is None or v == "" or v == [] or v == {}:
             continue
         if isinstance(v, str) and v.strip().lower() in {"null", "none"}:
