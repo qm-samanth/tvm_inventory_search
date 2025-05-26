@@ -90,15 +90,24 @@ def extract_params(user_query):
     # Remove vehicletypes if not explicitly mentioned in the query or if value is not supported
     if 'vehicletypes' in params:
         vt_value = params['vehicletypes']
-        # If it's a list, check all values; if string, check directly
-        if isinstance(vt_value, list):
-            vt_value = [v for v in vt_value if v in SUPPORTED_TYPES]
-            if vt_value:
-                params['vehicletypes'] = vt_value[0] if len(vt_value) == 1 else ",".join(vt_value)
-            else:
-                params.pop('vehicletypes')
-        elif vt_value not in SUPPORTED_TYPES:
+        # Only keep vehicletypes if explicitly mentioned in the user query (whole word match)
+        mentioned = False
+        for vt in SUPPORTED_TYPES:
+            if re.search(rf'\\b{re.escape(vt)}\\b', user_query.lower()):
+                mentioned = True
+                break
+        if not mentioned:
             params.pop('vehicletypes')
+        else:
+            # If it's a list, check all values; if string, check directly
+            if isinstance(vt_value, list):
+                vt_value = [v for v in vt_value if v in SUPPORTED_TYPES]
+                if vt_value:
+                    params['vehicletypes'] = vt_value[0] if len(vt_value) == 1 else ",".join(vt_value)
+                else:
+                    params.pop('vehicletypes')
+            elif vt_value not in SUPPORTED_TYPES:
+                params.pop('vehicletypes')
 
     # If year is present, less than current year, and no type, set type=used
     current_year = datetime.datetime.now().year
