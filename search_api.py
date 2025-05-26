@@ -507,6 +507,24 @@ def extract_params(user_query):
         else:
             print(f"[DEBUG] No explicit type in query, and LLM did not provide 'type'. 'type' remains unset before year logic.")
 
+    # Step 4.1: Clean trim if it duplicates the detected type
+    llm_trim_val = params.get('trim')
+    current_type = params.get('type')
+
+    if llm_trim_val and isinstance(llm_trim_val, str) and current_type:
+        llm_trim_lower = llm_trim_val.lower()
+        
+        type_related_trim_keywords = {
+            'cpo': ["certified pre-owned", "cpo", "certified preowned"],
+            'used': ["used", "pre-owned", "preowned"],
+            'new': ["new"]
+        }
+
+        if current_type in type_related_trim_keywords:
+            if llm_trim_lower in type_related_trim_keywords[current_type]:
+                print(f"[DEBUG] Removing trim (\'{llm_trim_val}\') as it duplicates the detected type (\'{current_type}\').")
+                params.pop('trim', None) # Use None to avoid KeyError if trim was already removed
+
     # Step 6: Validate and filter vehicletypes
     # Only populate vehicletypes if a supported type is EXPLICITLY mentioned in the query.
     if 'vehicletypes' in params: # Check if LLM even provided it as a starting point
