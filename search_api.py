@@ -123,7 +123,7 @@ def extract_params(user_query):
             print(f"[DEBUG] normalize_price_for_comparison: ValueError converting '{s}' to float.")
             return None
 
-    upper_bound_keywords = ["under ", "less than ", "at most ", "maximum ", " up to "]
+    upper_bound_keywords = ["under ", "less than ", "at most ", "maximum ", " up to ", "below "] # ADDED "below "
     query_has_upper_bound_keyword = any(keyword in user_query_lower for keyword in upper_bound_keywords)
 
     lower_bound_keywords = ["over ", "starting at ", "more than ", "at least ", "minimum "]
@@ -226,13 +226,16 @@ def extract_params(user_query):
             print(f"[DEBUG] normalize_mileage_for_internal_comparison: ValueError converting '{s}' (original: '{val_str_input}') to float.")
             return None
 
-    upper_bound_mileage_keywords = ["under ", "less than ", "at most ", "maximum ", " up to "] # Assuming "miles" is handled by LLM or normalization
-    query_has_upper_bound_mileage_keyword = any(keyword + "miles" in user_query_lower or keyword[:-1] + " miles" in user_query_lower or keyword + "mileage" in user_query_lower for keyword in upper_bound_mileage_keywords) or any(user_query_lower.startswith(keyword + "miles") or user_query_lower.startswith(keyword[:-1] + " miles") for keyword in upper_bound_mileage_keywords)
-
-
+    upper_bound_mileage_keywords = ["under ", "less than ", "at most ", "maximum ", " up to ", "below "]
     lower_bound_mileage_keywords = ["over ", "starting at ", "more than ", "at least ", "minimum "]
-    query_has_lower_bound_mileage_keyword = any(keyword + "miles" in user_query_lower or keyword[:-1] + " miles" in user_query_lower or keyword + "mileage" in user_query_lower for keyword in lower_bound_mileage_keywords) or any(user_query_lower.startswith(keyword + "miles") or user_query_lower.startswith(keyword[:-1] + " miles") for keyword in lower_bound_mileage_keywords)
 
+    # Revised mileage keyword detection
+    contains_mileage_term = "mileage" in user_query_lower or "miles" in user_query_lower
+    
+    query_has_upper_bound_mileage_keyword = contains_mileage_term and any(ukw in user_query_lower for ukw in upper_bound_mileage_keywords)
+    query_has_lower_bound_mileage_keyword = contains_mileage_term and any(lkw in user_query_lower for lkw in lower_bound_mileage_keywords)
+
+    print(f"[DEBUG] Mileage Keyword Flags: contains_mileage_term={contains_mileage_term}, query_has_upper_bound_mileage_keyword={query_has_upper_bound_mileage_keyword}, query_has_lower_bound_mileage_keyword={query_has_lower_bound_mileage_keyword}")
 
     llm_mileagemin = params.get("mileagemin")
     llm_mileagemax = params.get("mileagemax")
@@ -275,8 +278,7 @@ def extract_params(user_query):
 
     # --- End of Mileage Logic Refinement ---
 
-    # --- Start of Cross-Contamination/Collision Check (NEW) ---
-    # This runs after initial price & mileage keyword logic, but before defaulting min to 0 and final numeric normalization.
+    # --- Start of Re-routing and Collision Checks --- 
 
     price_keywords_pattern = r"(\$|\€|\£|\¥|\₹|dollar|euro|pound|yen|rupee|aud|price|cost|budget|payment)"
     query_has_strong_price_keywords = bool(re.search(price_keywords_pattern, user_query_lower))
@@ -287,6 +289,33 @@ def extract_params(user_query):
     query_has_generic_mileage_keywords = bool(re.search(generic_mileage_keywords_pattern, user_query_lower))
     query_context_is_mileage = query_has_upper_bound_mileage_keyword or query_has_lower_bound_mileage_keyword or query_has_generic_mileage_keywords
 
+    # --- NEW: Re-routing logic for LLM misplacing mileage numbers into price fields ---
+    if query_context_is_mileage and not query_has_strong_price_keywords:
+        # Check for upper-bound mileage context (e.g., "below X miles", "under X miles")
+        if query_has_upper_bound_mileage_keyword:
+            if not is_effectively_none_or_absent(params.get("paymentmin")) and is_effectively_none_or_absent(params.get("mileagemax")):
+                val_to_move = params.pop("paymentmin")
+                params["mileagemax"] = val_to_move
+                print(f"[DEBUG] Re-routing (mileage context): Moved LLM value from paymentmin ('{val_to_move}') to mileagemax.")
+            elif not is_effectively_none_or_absent(params.get("paymentmax")) and is_effectively_none_or_absent(params.get("mileagemax")):
+                # This case is less likely if LLM puts "below X" into paymentmax, but included for completeness
+                val_to_move = params.pop("paymentmax")
+                params["mileagemax"] = val_to_move
+                print(f"[DEBUG] Re-routing (mileage context): Moved LLM value from paymentmax ('{val_to_move}') to mileagemax.")
+        
+        # Check for lower-bound mileage context (e.g., "over X miles", "at least X miles")
+        elif query_has_lower_bound_mileage_keyword:
+            if not is_effectively_none_or_absent(params.get("paymentmax")) and is_effectively_none_or_absent(params.get("mileagemin")):
+                val_to_move = params.pop("paymentmax")
+                params["mileagemin"] = val_to_move
+                print(f"[DEBUG] Re-routing (mileage context): Moved LLM value from paymentmax ('{val_to_move}') to mileagemin.")
+            elif not is_effectively_none_or_absent(params.get("paymentmin")) and is_effectively_none_or_absent(params.get("mileagemin")):
+                # This case is less likely if LLM puts "over X" into paymentmin, but included for completeness
+                val_to_move = params.pop("paymentmin")
+                params["mileagemin"] = val_to_move
+                print(f"[DEBUG] Re-routing (mileage context): Moved LLM value from paymentmin ('{val_to_move}') to mileagemin.")
+
+    # --- Existing Cross-Contamination/Collision Check (Numeric comparison) ---
     def normalize_value_for_collision_check(val_str_input):
         if is_effectively_none_or_absent(val_str_input):
             return None
@@ -639,6 +668,11 @@ def build_inventory_url(base_url, params):
         # If the key is 'model', replace spaces with hyphens
         if k_lower == 'model':
             val_str_lower = val_str_lower.replace(' ', '-')
+        
+        # Skip paymentmax if its value is 0
+        if k_lower == 'paymentmax' and val_str_lower == '0':
+            print(f"[DEBUG] build_inventory_url: Skipping '{k_lower}' because its value is 0.")
+            continue
             
         filtered[k_lower] = val_str_lower
     return f"{base_url}?{urlencode(filtered)}"
