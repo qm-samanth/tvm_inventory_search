@@ -153,54 +153,53 @@ def extract_params(user_query):
                 print(f"[DEBUG] Removing {pay_key} (original value '{val}') due to normalization error: {e}")
                 if pay_key in params: params.pop(pay_key) # Ensure removal on error
     
-    # Step 4: Type detection and normalization (used, cpo, new) - (Moved Step 3 logic here, re-numbering for clarity)
+    # Step 4: Type detection and normalization (used, cpo, new)
     preowned_pattern = r"pre[-\s]?owned|preowned|used"
     certified_preowned_pattern = r"certified[ -]?(pre[-\s]?owned|preowned)"
     preowned_match = re.search(preowned_pattern, user_query_lower, re.IGNORECASE)
     certified_preowned_match = re.search(certified_preowned_pattern, user_query_lower, re.IGNORECASE)
-    cpo_keyword_match = 'cpo' in user_query_lower.split() # Check for 'cpo' as a whole word
+    
+    # Extract all whole words from the query for accurate keyword matching
+    query_words = re.findall(r'\b\w+\b', user_query_lower)
+    cpo_keyword_match = 'cpo' in query_words
+    new_keyword_match = 'new' in query_words
 
     print(f"[DEBUG] User query lower: '{user_query_lower}'")
+    print(f"[DEBUG] Query words for type check: {query_words}")
     print(f"[DEBUG] Preowned/used pattern match in user query: {preowned_match}")
     print(f"[DEBUG] Certified pre-owned pattern match in user query: {certified_preowned_match}")
     print(f"[DEBUG] CPO keyword match in user query: {cpo_keyword_match}")
+    print(f"[DEBUG] NEW keyword match in user query: {new_keyword_match}")
 
     explicit_type_from_query = None
     if certified_preowned_match or cpo_keyword_match:
         explicit_type_from_query = 'cpo'
-        print(f"[DEBUG] Type set to '{explicit_type_from_query}' from query (certified/cpo).")
+        print(f"[DEBUG] Type interpreted as 'cpo' from query text.")
     elif preowned_match:
         explicit_type_from_query = 'used'
-        print(f"[DEBUG] Type set to '{explicit_type_from_query}' from query (preowned/used).")
-    elif 'new' in user_query_lower.split(): # Check for 'new' as a whole word
+        print(f"[DEBUG] Type interpreted as 'used' from query text.")
+    elif new_keyword_match:
         explicit_type_from_query = 'new'
-        print(f"[DEBUG] Type set to '{explicit_type_from_query}' from query ('new').")
-
-    llm_type_val = str(params.get('type', '')).strip().lower()
-    print(f"[DEBUG] LLM output for type: '{llm_type_val}'")
+        print(f"[DEBUG] Type interpreted as 'new' from query text.")
 
     if explicit_type_from_query:
         params['type'] = explicit_type_from_query
-        print(f"[DEBUG] Final type set from query: {params['type']}")
-    elif llm_type_val:
-        # Normalize LLM output if it wasn't overridden by query
-        if re.fullmatch(certified_preowned_pattern, llm_type_val, re.IGNORECASE) or llm_type_val == 'cpo':
-            params['type'] = 'cpo'
-            print(f"[DEBUG] Final type set from LLM (normalized to cpo): {params['type']}")
-        elif re.fullmatch(preowned_pattern, llm_type_val, re.IGNORECASE):
-            params['type'] = 'used'
-            print(f"[DEBUG] Final type set from LLM (normalized to used): {params['type']}")
-        elif llm_type_val == 'new':
-            params['type'] = 'new'
-            print(f"[DEBUG] Final type set from LLM (new): {params['type']}")
+        print(f"[DEBUG] Final type set from explicit query mention: {params['type']}")
+    else:
+        # If no explicit type (new, used, cpo) was found in the user's query text,
+        # remove any 'type' the LLM might have provided. The prompt instructs
+        # the LLM to only include explicitly mentioned fields. If the LLM still provides it,
+        # we override that here for the 'type' field to ensure adherence to the rule.
+        # The year-based logic in Step 7 can later infer 'used' if applicable.
+        if 'type' in params:
+            llm_provided_type_val = params.get('type')
+            print(f"[DEBUG] Removing LLM-provided 'type': '{llm_provided_type_val}' because no explicit type (new/used/cpo) was found in the user query text.")
+            params.pop('type')
         else:
-            # If LLM type is not recognized and not set by query, remove it
-            if 'type' in params:
-                print(f"[DEBUG] Removing unrecognized LLM type: {params['type']}")
-                params.pop('type')
-    elif 'type' in params: # If no explicit query type and no valid LLM type, remove
-        print(f"[DEBUG] Removing type from params as it was not explicitly in query nor a valid LLM output.")
-        params.pop('type')
+            print(f"[DEBUG] No explicit type in query, and LLM did not provide 'type'. 'type' remains unset before year logic.")
+
+    # Step 5: Map price fields
+    # ...existing code...
 
     # Step 6: Validate and filter vehicletypes
     if 'vehicletypes' in params:
@@ -259,12 +258,14 @@ def extract_params(user_query):
                 params['year'] = year_val # Ensure year is stored as int
                 print(f"[DEBUG] Year in params: {year_val}, current year: {current_year}")
                 # If year is old, no type is set, and query doesn't explicitly say "new"
-                if year_val < current_year and not params.get('type') and 'new' not in user_query_lower.split():
-                    print("[DEBUG] Setting type to 'used' due to year < current year and no type/new mentioned.")
-                    params['type'] = 'used'
+                # As per user request, we no longer automatically set type=used here.
+                # Type should only come from explicit user query terms or LLM (handled in Step 4).
+                if year_val < current_year and not params.get('type') and 'new' not in query_words: # query_words was defined in Step 4
+                    print(f"[DEBUG] Condition met for potential old year type inference (year: {year_val} < {current_year}, no type, 'new' not in query), but NOT setting type=used as per new rule.")
+                    # params['type'] = 'used' # <--- This line is now removed/commented
         except ValueError:
-            print(f"[DEBUG] Year '{params['year']}' is not a valid integer. Removing year.")
-            params.pop('year')
+            print(f"[DEBUG] Year '{params.get('year')}' is not a valid integer. Removing year.")
+            if 'year' in params: params.pop('year')
         except Exception as e:
             print(f"[DEBUG] Exception processing year: {e}. Removing year.")
             if 'year' in params: params.pop('year')
