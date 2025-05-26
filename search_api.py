@@ -116,26 +116,37 @@ def extract_params(user_query):
     lower_bound_keywords = ["over ", "starting at ", "more than ", "at least ", "minimum "]
     query_has_lower_bound_keyword = any(keyword in user_query_lower for keyword in lower_bound_keywords)
 
-    llm_paymentmin = params.get("paymentmin")
-    llm_paymentmax = params.get("paymentmax")
+    llm_paymentmin_raw_val = params.get("paymentmin")
+    llm_paymentmax_raw_val = params.get("paymentmax")
 
-    # 1. Correction: If query implies "under X" (upper bound) but LLM provides only paymentmin (or paymentmax is effectively absent)
+    norm_llm_min_for_swap_check = normalize_price_for_comparison(llm_paymentmin_raw_val)
+    norm_llm_max_for_swap_check = normalize_price_for_comparison(llm_paymentmax_raw_val)
+
+    # 1. Correction for "under X" type queries (query has upper bound, no lower bound)
     if query_has_upper_bound_keyword and not query_has_lower_bound_keyword:
-        if not is_effectively_none_or_absent(llm_paymentmin) and is_effectively_none_or_absent(llm_paymentmax):
-            print(f"[DEBUG] Query implies 'under X'. LLM provided paymentmin ('{llm_paymentmin}') but paymentmax is effectively absent/null ('{llm_paymentmax}'). Swapping paymentmin to paymentmax.")
-            params["paymentmax"] = params.pop("paymentmin")
-            llm_paymentmax = params.get("paymentmax") # Update local var
-            llm_paymentmin = None # paymentmin was popped
-            if "paymentmin" in params: params.pop("paymentmin") # Ensure it is gone
+        # If paymentmin (from LLM) has a valid number, and paymentmax (from LLM) does not,
+        # or paymentmax is zero when paymentmin is not (which would be odd for "under X").
+        if norm_llm_min_for_swap_check is not None and \
+           (norm_llm_max_for_swap_check is None or \
+            (norm_llm_max_for_swap_check == 0 and norm_llm_min_for_swap_check != 0)):
+            print(f"[DEBUG] Query implies 'under X'. LLM's paymentmin ('{llm_paymentmin_raw_val}' -> {norm_llm_min_for_swap_check}) seems to be the correct value, "
+                  f"and paymentmax ('{llm_paymentmax_raw_val}' -> {norm_llm_max_for_swap_check}) is not valid or is an unexpected zero. "
+                  f"Setting paymentmax to paymentmin's value and removing paymentmin.")
+            params["paymentmax"] = llm_paymentmin_raw_val # Use the raw value, normalization happens later for all params
+            if "paymentmin" in params: params.pop("paymentmin")
 
-    # 2. Correction: If query implies "over X" (lower bound) but LLM provides only paymentmax (or paymentmin is effectively absent)
+    # 2. Correction for "over X" type queries (query has lower bound, no upper bound)
     elif query_has_lower_bound_keyword and not query_has_upper_bound_keyword:
-         if not is_effectively_none_or_absent(llm_paymentmax) and is_effectively_none_or_absent(llm_paymentmin):
-            print(f"[DEBUG] Query implies 'over X'. LLM provided paymentmax ('{llm_paymentmax}') but paymentmin is effectively absent/null ('{llm_paymentmin}'). Swapping paymentmax to paymentmin.")
-            params["paymentmin"] = params.pop("paymentmax")
-            llm_paymentmin = params.get("paymentmin") # Update local var
-            llm_paymentmax = None # paymentmax was popped
-            if "paymentmax" in params: params.pop("paymentmax") # Ensure it is gone
+        # If paymentmax (from LLM) has a valid number, and paymentmin (from LLM) does not,
+        # or paymentmin is zero when paymentmax is not (odd for "over X").
+        if norm_llm_max_for_swap_check is not None and \
+           (norm_llm_min_for_swap_check is None or \
+            (norm_llm_min_for_swap_check == 0 and norm_llm_max_for_swap_check != 0)):
+            print(f"[DEBUG] Query implies 'over X'. LLM's paymentmax ('{llm_paymentmax_raw_val}' -> {norm_llm_max_for_swap_check}) seems to be the correct value, "
+                  f"and paymentmin ('{llm_paymentmin_raw_val}' -> {norm_llm_min_for_swap_check}) is not valid or is an unexpected zero. "
+                  f"Setting paymentmin to paymentmax's value and removing paymentmax.")
+            params["paymentmin"] = llm_paymentmax_raw_val # Use the raw value
+            if "paymentmax" in params: params.pop("paymentmax")
 
     # 3. Handle cases where LLM might have set paymentmin == paymentmax for "under X" queries,
     #    or paymentmin > paymentmax. This runs *after* potential swaps above.
