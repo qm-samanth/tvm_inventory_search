@@ -1,7 +1,8 @@
 import datetime
 ALLOWED_PARAMS = {
     'year', 'make', 'model', 'trim', 'color', 'vehicletypes', 'transmissions',
-    'featuresubcategories', 'paymentmax', 'paymentmin', 'type'
+    'featuresubcategories', 'paymentmax', 'paymentmin', 'type',
+    'mileagemin', 'mileagemax' # Added mileage params
 }
 SUPPORTED_TYPES = [
     'convertible', 'coupe', 'suv', 'sedan', 'truck', 'van', 'wagon', 'hatchback', 'mpv'
@@ -34,16 +35,20 @@ prompt = PromptTemplate(
     input_variables=["query"],
     template=(
         "Extract the following fields from this vehicle search query, but ONLY include a field if it is explicitly mentioned in the query: "
-        "year, make, model, trim, color, vehicle type, transmission, features, and type (used/new/certified). "
+        "year, make, model, trim, color, vehicle type, transmission, features, mileage, and type (used/new/certified). " # Added mileage
         "Also extract price information: if a price range like 'between X and Y' or 'X to Y' is given, populate 'paymentmin' with X and 'paymentmax' with Y. "
         "If only one price is mentioned (e.g., 'under X', 'around X', 'less than X', 'at most X'), populate 'paymentmax' with X. "
         "If the query says 'over X', 'starting at X', 'more than X', 'at least X', populate 'paymentmin' with X. "
+        "Also extract mileage information: if a mileage range like 'between X and Y miles' or 'X to Y miles' is given, populate 'mileagemin' with X and 'mileagemax' with Y. " # Mileage instruction
+        "If only one mileage is mentioned (e.g., 'under X miles', 'less than X miles', 'at most X miles'), populate 'mileagemax' with X. " # Mileage instruction
+        "If the query says 'over X miles', 'starting at X miles', 'more than X miles', 'at least X miles', populate 'mileagemin' with X. " # Mileage instruction
         "Supported vehicle types are: convertible, coupe, suv, sedan, truck, van, wagon, hatchback, mpv. "
         "If the query uses generic terms like 'car', 'cars', 'vehicle', or 'vehicles', do not include any value for 'vehicletypes' unless a specific supported type is also mentioned. "
         "Do NOT guess or fill in any values that are not present in the query. "
         "Return a JSON object with only the keys that were mentioned in the query, using lowercase for all keys and values. "
         "Use these keys in the JSON: 'year', 'make', 'model', 'trim', 'color', 'vehicletypes' (for vehicle type), "
-        "'transmissions' (for transmission), 'featuresubcategories' (for features), 'type', 'paymentmin', 'paymentmax'. "
+        "'transmissions' (for transmission), 'featuresubcategories' (for features), 'type', 'paymentmin', 'paymentmax', "
+        "'mileagemin', 'mileagemax'. " # Added mileage keys
         "Query: {query}"
     ),
 )
@@ -158,42 +163,195 @@ def extract_params(user_query):
     
     # --- End of Price Logic Refinement ---
 
-    # Step 2: Correct LLM confusion: if model is a supported vehicle type, move to vehicletypes
-    if 'model' in params and params['model']:
-        model_val = str(params['model']).strip().lower()
-        if model_val in SUPPORTED_TYPES:
-            print(f"[DEBUG] Moving model '{model_val}' to vehicletypes due to LLM confusion.")
-            if 'vehicletypes' not in params or not params['vehicletypes']: # Only overwrite if not already set or empty
-                params['vehicletypes'] = model_val
-            params.pop('model')
+    # --- Start of Mileage Logic Refinement ---
+    # This section aims to correctly interpret LLM's mileage outputs.
 
-    # Step 5: Price field handling. LLM should provide 'paymentmin' and 'paymentmax' directly from prompt.
-    # Minimal fallbacks for older LLM behavior or misinterpretations:
-    if 'maximum price' in params and is_effectively_none_or_absent(params.get('paymentmax')): 
-        val = params.pop('maximum price')
-        if not is_effectively_none_or_absent(val):
-            params['paymentmax'] = val
-            print(f"[DEBUG] Fallback: Mapped 'maximum price' to 'paymentmax'")
+    # Keywords for stripping from values if LLM includes them
+    mileage_value_strip_keywords = [
+        "under ", "less than ", "at most ", "maximum ", " up to ", # Upper bounds
+        "over ", "starting at ", "more than ", "at least ", "minimum "  # Lower bounds
+    ]
 
-    if 'price' in params: 
-        price_val = params.get('price')
-        if not is_effectively_none_or_absent(price_val):
-            # Only use 'price' if both paymentmin and paymentmax are still effectively absent after refinements
-            if is_effectively_none_or_absent(params.get('paymentmin')) and is_effectively_none_or_absent(params.get('paymentmax')):
-                if query_has_lower_bound_keyword and not query_has_upper_bound_keyword:
-                    params['paymentmin'] = price_val
-                    print(f"[DEBUG] Fallback: Assuming 'price' field ('{price_val}') is for 'paymentmin' due to lower-bound keywords.")
-                else: 
-                    params['paymentmax'] = price_val
-                    print(f"[DEBUG] Fallback: Assuming 'price' field ('{price_val}') is for 'paymentmax'.")
-        # Always pop 'price' after considering it
-        if 'price' in params: params.pop('price')
+    def strip_mileage_keywords_from_value(val_str_input):
+        s = val_str_input.lower().strip() # Work with lowercase
+        for keyword in mileage_value_strip_keywords:
+            if s.startswith(keyword):
+                s = s[len(keyword):].strip()
+                break # Remove only one instance of a prefix
+        return s
+
+    def normalize_mileage_for_internal_comparison(val_str_input):
+        if is_effectively_none_or_absent(val_str_input):
+            return None
+        
+        s = str(val_str_input) # Don't lowercase here, strip_mileage_keywords_from_value will
+        s = strip_mileage_keywords_from_value(s) # Strip prefixes like "less than "
+        s = s.lower().strip().replace(",", "") # Now lowercase and clean commas
+
+        if s.endswith('k'):
+            s = s[:-1].strip()
+            try: return float(s) * 1000 if s else None
+            except ValueError: return None
+        elif "miles".casefold() in s: 
+            s = s.replace("miles","").strip()
+
+        if not s or s in ["null", "none"]: return None
+        try:
+            return float(s)
+        except ValueError:
+            print(f"[DEBUG] normalize_mileage_for_internal_comparison: ValueError converting '{s}' (original: '{val_str_input}') to float.")
+            return None
+
+    upper_bound_mileage_keywords = ["under ", "less than ", "at most ", "maximum ", " up to "] # Assuming "miles" is handled by LLM or normalization
+    query_has_upper_bound_mileage_keyword = any(keyword + "miles" in user_query_lower or keyword[:-1] + " miles" in user_query_lower or keyword + "mileage" in user_query_lower for keyword in upper_bound_mileage_keywords) or any(user_query_lower.startswith(keyword + "miles") or user_query_lower.startswith(keyword[:-1] + " miles") for keyword in upper_bound_mileage_keywords)
+
+
+    lower_bound_mileage_keywords = ["over ", "starting at ", "more than ", "at least ", "minimum "]
+    query_has_lower_bound_mileage_keyword = any(keyword + "miles" in user_query_lower or keyword[:-1] + " miles" in user_query_lower or keyword + "mileage" in user_query_lower for keyword in lower_bound_mileage_keywords) or any(user_query_lower.startswith(keyword + "miles") or user_query_lower.startswith(keyword[:-1] + " miles") for keyword in lower_bound_mileage_keywords)
+
+
+    llm_mileagemin = params.get("mileagemin")
+    llm_mileagemax = params.get("mileagemax")
+
+    if query_has_upper_bound_mileage_keyword and not query_has_lower_bound_mileage_keyword:
+        if not is_effectively_none_or_absent(llm_mileagemin) and is_effectively_none_or_absent(llm_mileagemax):
+            print(f"[DEBUG] Query implies 'under X miles'. LLM provided mileagemin ('{llm_mileagemin}') but mileagemax is absent/null. Swapping mileagemin to mileagemax.")
+            params["mileagemax"] = params.pop("mileagemin")
+            if "mileagemin" in params: params.pop("mileagemin") # Ensure it's gone
+
+    elif query_has_lower_bound_mileage_keyword and not query_has_upper_bound_mileage_keyword:
+         if not is_effectively_none_or_absent(llm_mileagemax) and is_effectively_none_or_absent(llm_mileagemin):
+            print(f"[DEBUG] Query implies 'over X miles'. LLM provided mileagemax ('{llm_mileagemax}') but mileagemin is absent/null. Swapping mileagemax to mileagemin.")
+            params["mileagemin"] = params.pop("mileagemax")
+            if "mileagemax" in params: params.pop("mileagemax") # Ensure it's gone
+    
+    # Re-fetch after potential swaps
+    current_mileagemin_str = params.get("mileagemin")
+    current_mileagemax_str = params.get("mileagemax")
+
+    norm_mileagemin_for_logic = normalize_mileage_for_internal_comparison(current_mileagemin_str)
+    norm_mileagemax_for_logic = normalize_mileage_for_internal_comparison(current_mileagemax_str)
+
+    if norm_mileagemin_for_logic is not None and norm_mileagemax_for_logic is not None:
+        if query_has_upper_bound_mileage_keyword and not query_has_lower_bound_mileage_keyword: # "under X miles"
+            if norm_mileagemin_for_logic == norm_mileagemax_for_logic and norm_mileagemin_for_logic != 0:
+                print(f"[DEBUG] Query implies 'under X miles' and mileagemin ('{current_mileagemin_str}') == mileagemax ('{current_mileagemax_str}'). Unsetting mileagemin.")
+                params.pop("mileagemin")
+            elif norm_mileagemin_for_logic > norm_mileagemax_for_logic:
+                print(f"[DEBUG] For 'under X miles' query, mileagemin ('{current_mileagemin_str}') > mileagemax ('{current_mileagemax_str}'). Removing mileagemin.")
+                params.pop("mileagemin")
+        elif norm_mileagemin_for_logic > norm_mileagemax_for_logic: # General case if min > max
+            print(f"[DEBUG] mileagemin ('{current_mileagemin_str}') > mileagemax ('{current_mileagemax_str}'). Removing mileagemin.")
+            params.pop("mileagemin")
+
+    # Default mileagemin to 0 if mileagemax is present and mileagemin is effectively absent
+    if not is_effectively_none_or_absent(params.get("mileagemax")) and is_effectively_none_or_absent(params.get("mileagemin")):
+        params["mileagemin"] = "0" # Set as string "0", will be normalized to int later
+        print(f"[DEBUG] Defaulted mileagemin to 0 as mileagemax is present and mileagemin was effectively absent.")
+
+    # --- End of Mileage Logic Refinement ---
+
+    # --- Start of Cross-Contamination/Collision Check (NEW) ---
+    # This runs after initial price & mileage keyword logic, but before defaulting min to 0 and final numeric normalization.
+
+    price_keywords_pattern = r"(\$|\€|\£|\¥|\₹|dollar|euro|pound|yen|rupee|aud|price|cost|budget|payment)"
+    query_has_strong_price_keywords = bool(re.search(price_keywords_pattern, user_query_lower))
+
+    # query_has_upper_bound_mileage_keyword and query_has_lower_bound_mileage_keyword are already defined
+    # We also need a general check for any mileage keyword if those aren't set
+    generic_mileage_keywords_pattern = r"(mile|mileage|km|kilometer)"
+    query_has_generic_mileage_keywords = bool(re.search(generic_mileage_keywords_pattern, user_query_lower))
+    query_context_is_mileage = query_has_upper_bound_mileage_keyword or query_has_lower_bound_mileage_keyword or query_has_generic_mileage_keywords
+
+    def normalize_value_for_collision_check(val_str_input):
+        if is_effectively_none_or_absent(val_str_input):
+            return None
+        
+        s = str(val_str_input) # Original value
+        # Try to strip prefixes that mileage logic's normalize_mileage_for_internal_comparison would strip
+        # This is to make the comparison fair if one value has it and other doesn't pre-normalization
+        s_temp_mileage_norm = strip_mileage_keywords_from_value(s) # strip "less than" etc.
+        s_temp_mileage_norm = s_temp_mileage_norm.lower().replace(",", "").replace("miles", "").strip()
+        
+        # Also try to strip price related symbols for a more raw number comparison
+        s_temp_price_norm = s.lower().replace("$","").replace(",","").strip()
+
+        # If mileage normalization changed it significantly (e.g. removed "less than X miles") use that, else use price norm
+        # This is a heuristic. The goal is to get to the core number.
+        if len(s_temp_mileage_norm) < len(s_temp_price_norm) and s_temp_mileage_norm.replace('.','',1).isdigit():
+            s_for_num = s_temp_mileage_norm
+        else:
+            s_for_num = s_temp_price_norm
+        
+        # Handle 'k' or 'm' if present at the end of s_for_num
+        multiplier = 1
+        if s_for_num.endswith('k'):
+            multiplier = 1000; s_for_num = s_for_num[:-1].strip()
+        elif s_for_num.endswith('m'):
+            multiplier = 1000000; s_for_num = s_for_num[:-1].strip()
+
+        if not s_for_num or not s_for_num.replace('.','',1).isdigit(): # check if it can be a number
+            # Fallback if the above heuristic didn't yield a clean number string
+            # Try the mileage normalizer directly as it's more comprehensive for stripping text
+            num_val = normalize_mileage_for_internal_comparison(str(val_str_input)) # This returns a float or None
+            return num_val
+
+        try:
+            return float(s_for_num) * multiplier
+        except ValueError:
+            print(f"[DEBUG] normalize_value_for_collision_check: ValueError converting '{s_for_num}' (original: '{val_str_input}')")
+            return None
+
+    # Get current raw values that might be in params
+    raw_paymentmin = params.get("paymentmin")
+    raw_paymentmax = params.get("paymentmax")
+    raw_mileagemin = params.get("mileagemin")
+    raw_mileagemax = params.get("mileagemax")
+
+    comp_paymentmin = normalize_value_for_collision_check(raw_paymentmin)
+    comp_paymentmax = normalize_value_for_collision_check(raw_paymentmax)
+    comp_mileagemin = normalize_value_for_collision_check(raw_mileagemin)
+    comp_mileagemax = normalize_value_for_collision_check(raw_mileagemax)
+
+    # Collision Check 1: paymentmax == mileagemax
+    if comp_paymentmax is not None and comp_paymentmax == comp_mileagemax:
+        if query_context_is_mileage and not query_has_strong_price_keywords:
+            print(f"[DEBUG] Collision: paymentmax ({raw_paymentmax} -> {comp_paymentmax}) == mileagemax ({raw_mileagemax} -> {comp_mileagemax}). Query context is mileage. Popping paymentmax.")
+            params.pop("paymentmax", None)
+            # If paymentmin was 0 and likely defaulted due to this paymentmax, it should also be considered.
+            # However, the main paymentmin defaulting runs after this, so if paymentmax is gone, paymentmin won't be defaulted from it.
+            # If paymentmin was also a collision (see below), it will be handled.
+
+    # Collision Check 2: paymentmin == mileagemin
+    if comp_paymentmin is not None and comp_paymentmin == comp_mileagemin:
+        if query_context_is_mileage and not query_has_strong_price_keywords:
+            print(f"[DEBUG] Collision: paymentmin ({raw_paymentmin} -> {comp_paymentmin}) == mileagemin ({raw_mileagemin} -> {comp_mileagemin}). Query context is mileage. Popping paymentmin.")
+            params.pop("paymentmin", None)
+    
+    # Collision Check 3: paymentmax == mileagemin (e.g. query "over 75k miles", LLM puts 75k in paymentmax and mileagemin)
+    if comp_paymentmax is not None and comp_paymentmax == comp_mileagemin:
+        if query_context_is_mileage and not query_has_strong_price_keywords:
+            print(f"[DEBUG] Collision: paymentmax ({raw_paymentmax} -> {comp_paymentmax}) == mileagemin ({raw_mileagemin} -> {comp_mileagemin}). Query context is mileage. Popping paymentmax.")
+            params.pop("paymentmax", None)
+
+    # Collision Check 4: paymentmin == mileagemax (e.g. query "under 75k miles", LLM puts 75k in paymentmin and mileagemax)
+    if comp_paymentmin is not None and comp_paymentmin == comp_mileagemax:
+        if query_context_is_mileage and not query_has_strong_price_keywords:
+            print(f"[DEBUG] Collision: paymentmin ({raw_paymentmin} -> {comp_paymentmin}) == mileagemax ({raw_mileagemax} -> {comp_mileagemax}). Query context is mileage. Popping paymentmin.")
+            params.pop("paymentmin", None)
+
+    # --- End of Cross-Contamination/Collision Check ---
 
     # Default paymentmin to 0 if paymentmax is present (and not effectively absent) 
     # and paymentmin is effectively absent (or was unset by prior logic).
     if not is_effectively_none_or_absent(params.get('paymentmax')) and is_effectively_none_or_absent(params.get('paymentmin')):
         params['paymentmin'] = 0 
         print(f"[DEBUG] Defaulted paymentmin to 0 as paymentmax is present and paymentmin was effectively absent.")
+
+    # Default mileagemin to 0 if mileagemax is present and mileagemin is effectively absent
+    if not is_effectively_none_or_absent(params.get("mileagemax")) and is_effectively_none_or_absent(params.get("mileagemin")):
+        params["mileagemin"] = "0" # Set as string "0", will be normalized to int later
+        print(f"[DEBUG] Defaulted mileagemin to 0 as mileagemax is present and mileagemin was effectively absent.")
 
     # Step 5.1: Normalize 'paymentmin' and 'paymentmax' values
     for pay_key in ["paymentmin", "paymentmax"]:
@@ -241,6 +399,44 @@ def extract_params(user_query):
             except (ValueError, TypeError) as e:
                 print(f"[DEBUG] Removing {pay_key} (original value '{val}') due to normalization error: {e}")
                 if pay_key in params: params.pop(pay_key) # Ensure removal on error
+    
+    # NEW Step for Mileage Normalization (e.g., Step 5.2)
+    for m_key in ["mileagemin", "mileagemax"]:
+        if m_key in params:
+            val = params[m_key]
+            if is_effectively_none_or_absent(val):
+                print(f"[DEBUG] Removing {m_key} because value is effectively none/absent: original ('{val}')")
+                params.pop(m_key)
+                continue
+
+            val_str = str(val) # Start with original string form
+            # Strip prefixes like "less than " from the value itself
+            val_str = strip_mileage_keywords_from_value(val_str)
+            
+            # Standard cleaning
+            val_str = val_str.lower().strip().replace(",", "").replace("miles", "").strip()
+
+            multiplier = 1
+            if val_str.endswith('k'):
+                multiplier = 1000
+                val_str = val_str[:-1].strip()
+            
+            if not val_str or val_str in ["null", "none"]: # Check after all stripping
+                print(f"[DEBUG] Removing {m_key} because value became empty or 'null'/'none' after cleaning: original ('{val}')")
+                params.pop(m_key)
+                continue
+            
+            try:
+                num_val = float(val_str) * multiplier 
+                if num_val.is_integer():
+                    params[m_key] = int(num_val)
+                else: 
+                    print(f"[DEBUG] Mileage {m_key} ('{val}') resulted in non-integer {num_val} after normalization. Removing.")
+                    params.pop(m_key) 
+                print(f"[DEBUG] Normalized {m_key} (from '{val}') to {params.get(m_key)}")
+            except (ValueError, TypeError) as e:
+                print(f"[DEBUG] Removing {m_key} (original value '{val}') due to mileage normalization error: {e}")
+                if m_key in params: params.pop(m_key)
     
     # Step 4: Type detection and normalization (used, cpo, new)
     preowned_pattern = r"pre[-\s]?owned|preowned|used"
