@@ -149,6 +149,7 @@ def extract_params(user_query):
     return params
 
 def build_inventory_url(base_url, params):
+    GENERIC_TERMS = {"car", "cars", "vehicle", "vehicles"}
     filtered = {}
     for k, v in params.items():
         k_lower = k.lower()
@@ -158,8 +159,17 @@ def build_inventory_url(base_url, params):
             continue
         if isinstance(v, dict):
             continue
+        # Exclude generic values for any field
+        def is_generic(val):
+            if isinstance(val, str):
+                return val.strip().lower() in GENERIC_TERMS
+            if isinstance(val, list):
+                return any(is_generic(item) for item in val)
+            return False
+        if is_generic(v):
+            continue
         if isinstance(v, list):
-            v = [item for item in v if item]
+            v = [item for item in v if item and not is_generic(item)]
             if len(v) == 1:
                 v = v[0]
             elif len(v) > 1:
