@@ -78,30 +78,36 @@ def extract_params(user_query):
     elif preowned_match:
         print("[DEBUG] Setting type to 'used' due to user query match.")
         params['type'] = 'used'
-    elif 'type' in params and params['type']:
-        type_val = str(params['type']).strip().lower()
-        print("[DEBUG] LLM output type value:", type_val)
-        type_match = re.fullmatch(preowned_pattern, type_val, re.IGNORECASE)
-        certified_type_match = re.fullmatch(certified_preowned_pattern, type_val, re.IGNORECASE)
-        print("[DEBUG] Preowned/used pattern match in LLM output type:", type_match)
-        print("[DEBUG] Certified pre-owned pattern match in LLM output type:", certified_type_match)
-        if certified_type_match or type_val == 'cpo':
-            print("[DEBUG] Setting type to 'cpo' due to LLM output type match.")
-            params['type'] = 'cpo'
-        elif type_match:
-            print("[DEBUG] Setting type to 'used' due to LLM output type match.")
-            params['type'] = 'used'
-        elif 'certified' in user_query_lower:
-            print("[DEBUG] Setting type to 'cpo' due to 'certified' in user query.")
-            params['type'] = 'cpo'
-        elif 'new' in user_query_lower:
-            print("[DEBUG] Setting type to 'new' due to 'new' in user query.")
-            params['type'] = 'new'
-        elif 'used' in user_query_lower:
-            print("[DEBUG] Setting type to 'used' due to 'used' in user query.")
-            params['type'] = 'used'
-        else:
-            print("[DEBUG] Removing type from params due to no match.")
+    else:
+        # Only allow type if explicitly mentioned in user query or inferred by year logic
+        explicit_type = None
+        if 'type' in params and params['type']:
+            type_val = str(params['type']).strip().lower()
+            print("[DEBUG] LLM output type value:", type_val)
+            type_match = re.fullmatch(preowned_pattern, type_val, re.IGNORECASE)
+            certified_type_match = re.fullmatch(certified_preowned_pattern, type_val, re.IGNORECASE)
+            print("[DEBUG] Preowned/used pattern match in LLM output type:", type_match)
+            print("[DEBUG] Certified pre-owned pattern match in LLM output type:", certified_type_match)
+            if certified_type_match or type_val == 'cpo':
+                print("[DEBUG] Setting type to 'cpo' due to LLM output type match.")
+                explicit_type = 'cpo'
+            elif type_match:
+                print("[DEBUG] Setting type to 'used' due to LLM output type match.")
+                explicit_type = 'used'
+            elif 'certified' in user_query_lower:
+                print("[DEBUG] Setting type to 'cpo' due to 'certified' in user query.")
+                explicit_type = 'cpo'
+            elif 'new' in user_query_lower:
+                print("[DEBUG] Setting type to 'new' due to 'new' in user query.")
+                explicit_type = 'new'
+            elif 'used' in user_query_lower:
+                print("[DEBUG] Setting type to 'used' due to 'used' in user query.")
+                explicit_type = 'used'
+        # Remove type if not explicitly mentioned or inferred by year logic (handled later)
+        if explicit_type:
+            params['type'] = explicit_type
+        elif 'type' in params:
+            print("[DEBUG] Removing type from params: not explicitly mentioned in user query.")
             params.pop('type')
 
     # Map maximum price to paymentmax and set paymentmin=0 if only max is present
@@ -162,14 +168,17 @@ def build_inventory_url(base_url, params):
         k_lower = k.lower()
         if k_lower not in ALLOWED_PARAMS:
             continue  # Skip any param not in the allowed list
+        # Skip None, empty, or string 'null'/'none' (case-insensitive)
         if v is None or v == "" or v == [] or v == {}:
+            continue
+        if isinstance(v, str) and v.strip().lower() in {"null", "none"}:
             continue
         if isinstance(v, dict):
             continue
         # Exclude generic values for any field
         def is_generic(val):
             if isinstance(val, str):
-                return val.strip().lower() in GENERIC_TERMS
+                return val.strip().lower() in GENERIC_TERMS or val.strip().lower() in {"null", "none"}
             if isinstance(val, list):
                 return any(is_generic(item) for item in val)
             return False
