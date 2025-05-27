@@ -127,7 +127,39 @@ def extract_params(user_query):
         print(f"[DIAGNOSTIC] llm_make_val ('{llm_make_val}') is not a string. Skipping make/model correction.")
 
     print(f"[DIAGNOSTIC] Params after make/model correction attempt: make='{params.get('make')}', model='{params.get('model')}'")
-    # --- End of Make/Model Correction ---
+
+    # --- Start of Non-CSV Model Name Removal ---
+    current_model_val = params.get("model")
+    if isinstance(current_model_val, str):
+        model_val_lower = current_model_val.lower() # LLM's model, lowercased
+
+        found_in_csv = False
+        # Check 1: Original form from LLM (lowercased)
+        if model_val_lower in MODEL_TO_MAKE_DATA:
+            found_in_csv = True
+            print(f"[DEBUG] Model '{current_model_val}' (as '{model_val_lower}') found directly in MODEL_TO_MAKE_DATA.")
+        else:
+            # Check 2: Convert LLM's model's hyphens to spaces and check
+            model_as_spaced = model_val_lower.replace('-', ' ')
+            if model_as_spaced != model_val_lower and model_as_spaced in MODEL_TO_MAKE_DATA:
+                found_in_csv = True
+                print(f"[DEBUG] Model '{current_model_val}' (normalized to '{model_as_spaced}') found in MODEL_TO_MAKE_DATA.")
+            else:
+                # Check 3: Convert LLM's model's spaces to hyphens and check
+                model_as_hyphenated = model_val_lower.replace(' ', '-')
+                if model_as_hyphenated != model_val_lower and model_as_hyphenated in MODEL_TO_MAKE_DATA:
+                    found_in_csv = True
+                    print(f"[DEBUG] Model '{current_model_val}' (normalized to '{model_as_hyphenated}') found in MODEL_TO_MAKE_DATA.")
+        
+        if not found_in_csv:
+            print(f"[DEBUG] Model was '{current_model_val}'. Not found in MODEL_TO_MAKE_DATA after checking variations. Removing model parameter.")
+            params.pop("model", None)
+        else:
+            # If the model is valid, ensure it's stored in a consistently hyphenated format in params 
+            # for consistency before build_inventory_url, which also hyphenates.
+            params['model'] = model_val_lower.replace(' ', '-')
+            print(f"[DEBUG] Model '{current_model_val}' is valid. Storing/ensuring as hyphenated: '{params['model']}'.")
+    # --- End of Non-CSV Model Name Removal ---
 
     # --- Start of Price Logic Refinement ---
 
