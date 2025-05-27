@@ -530,7 +530,6 @@ def extract_params(user_query):
     preowned_match = re.search(preowned_pattern, user_query_lower, re.IGNORECASE)
     certified_preowned_match = re.search(certified_preowned_pattern, user_query_lower, re.IGNORECASE)
     
-    # Extract all whole words from the query for accurate keyword matching
     query_words = re.findall(r'\b\w+\b', user_query_lower)
     cpo_keyword_match = 'cpo' in query_words
     new_keyword_match = 'new' in query_words
@@ -553,22 +552,32 @@ def extract_params(user_query):
         explicit_type_from_query = 'new'
         print(f"[DEBUG] Type interpreted as 'new' from query text.")
 
-    if explicit_type_from_query:
-        params['type'] = explicit_type_from_query
-        print(f"[DEBUG] Final type set from explicit query mention: {params['type']}")
+    # Get the type LLM provided, if any
+    llm_provided_type = params.get("type")
+    if isinstance(llm_provided_type, str):
+        llm_provided_type = llm_provided_type.lower().strip()
+        if llm_provided_type not in VALID_QUERY_PARAM_TYPES:
+            # Corrected f-string: Use different quotes for the outer f-string and inner string literals,
+            # or escape the inner quotes if they must be the same.
+            # Here, we ensure the f-string uses single quotes for its value part if the outer uses double, or vice-versa.
+            # Simpler: just use the variable `llm_provided_type` which already holds the value of params.get("type")
+            print(f"[DEBUG] LLM provided type '{llm_provided_type}' (original: '{params.get('type')}') is not in VALID_QUERY_PARAM_TYPES. Discarding LLM type.")
+            llm_provided_type = None # Discard invalid type from LLM
     else:
-        # If no explicit type (new, used, cpo) was found in the user's query text,
-        # check if LLM provided a type and if it's valid.
-        llm_provided_type_val = params.get('type')
-        if not is_effectively_none_or_absent(llm_provided_type_val):
-            if isinstance(llm_provided_type_val, str) and llm_provided_type_val.lower() in VALID_QUERY_PARAM_TYPES:
-                params['type'] = llm_provided_type_val.lower() # Ensure it's stored in lowercase
-                print(f"[DEBUG] No explicit type in query, but LLM provided a valid type: '{params['type']}'. Retaining it.")
-            else:
-                print(f"[DEBUG] Removing LLM-provided 'type': '{llm_provided_type_val}' because it was not explicit in query and is not one of {VALID_QUERY_PARAM_TYPES}.")
-                params.pop('type', None)
+        llm_provided_type = None # LLM type was not a string or absent
+
+    # Decision logic for final type:
+    # Priority 1: Explicit type found in the user query.
+    if explicit_type_from_query:
+        params["type"] = explicit_type_from_query
+        print(f"[DEBUG] Final type set from explicit query mention: {params['type']}")
+    # Priority 2: No explicit type in query, so remove any type LLM might have suggested.
+    else:
+        if "type" in params: # If LLM suggested a type and it's still in params
+            print(f"[DEBUG] No explicit type in query. Removing type '{params.get('type')}' that might have been suggested by LLM.")
+            params.pop("type")
         else:
-            print(f"[DEBUG] No explicit type in query, and LLM did not provide 'type'. 'type' remains unset before year logic.")
+            print(f"[DEBUG] No explicit type in query and no type suggested by LLM. 'type' parameter remains absent.")
 
     # Step 4.1: Clean trim if it duplicates the detected type
     llm_trim_val = params.get('trim')
