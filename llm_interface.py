@@ -30,6 +30,8 @@ FIELD-SPECIFIC INSTRUCTIONS:
 2. TRANSMISSIONS FIELD:
    - Allowed values: "manual", "automatic", or "cvt"
    - Map alternative terms: 'stick shift' → manual, 'auto' → automatic
+   - Special rule: If user mentions 'cvt' OR 'automatic', return "cvt,automatic" (both values)
+   - Only return "manual" by itself when manual transmission is specifically mentioned
    - Ensure CVT goes in 'transmissions' field, NOT 'vehicletypes'
 
 3. DRIVETRAINS FIELD:

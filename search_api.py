@@ -275,6 +275,45 @@ def extract_params(user_query):
     print(f"[DEBUG] Params after drivetrain logic: {params.get('drivetrains')}")
     # --- End of Drivetrain Logic ---
 
+    # --- Start of Transmission Logic ---
+    llm_transmissions_raw = params.get("transmissions")
+    print(f"[DEBUG] LLM provided transmissions (raw): {llm_transmissions_raw}")
+    
+    # Process LLM transmission output
+    llm_transmission_processed = None
+    if isinstance(llm_transmissions_raw, list):
+        if len(llm_transmissions_raw) > 0 and isinstance(llm_transmissions_raw[0], str):
+            llm_transmission_processed = llm_transmissions_raw[0]
+            print(f"[DEBUG] LLM transmission was a list, using first element: '{llm_transmission_processed}'")
+        else:
+            print(f"[DEBUG] LLM transmission was a list, but not in expected format: {llm_transmissions_raw}. Removing.")
+            params.pop("transmissions", None)
+    elif isinstance(llm_transmissions_raw, str):
+        llm_transmission_processed = llm_transmissions_raw
+        print(f"[DEBUG] LLM transmission is a string: '{llm_transmission_processed}'")
+    elif llm_transmissions_raw is not None:
+        print(f"[DEBUG] LLM transmission '{llm_transmissions_raw}' is not a list or string. Removing.")
+        params.pop("transmissions", None)
+
+    # Apply the CVT/automatic rule: if user mentions either, return both
+    if llm_transmission_processed:
+        llm_transmission_lower = llm_transmission_processed.lower().strip()
+        
+        if llm_transmission_lower in ["cvt", "automatic", "auto"]:
+            # If LLM detected cvt or automatic (or auto), set both
+            params["transmissions"] = "cvt,automatic"
+            print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' detected as CVT or automatic. Setting to: 'cvt,automatic'")
+        elif llm_transmission_lower in ["manual", "stick", "stick shift"]:
+            # If manual transmission, keep it as manual only
+            params["transmissions"] = "manual"
+            print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' detected as manual. Setting to: 'manual'")
+        else:
+            print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' not recognized. Removing.")
+            params.pop("transmissions", None)
+    
+    print(f"[DEBUG] Params after transmission logic: {params.get('transmissions')}")
+    # --- End of Transmission Logic ---
+
     # --- Start of Final Make Validation ---
     # This block ensures that the 'make' parameter, after all corrections, is a known make.
     current_make_val = params.get("make")
