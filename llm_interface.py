@@ -39,12 +39,16 @@ prompt = PromptTemplate(
 def get_llm_params_from_query(user_query: str) -> dict:
     """Helper function to call LLM and parse its JSON response, with caching."""
     
+    llm_response_cache.clear() # TEMPORARY: Clears cache on every call for testing
+
     # Check cache first
+    # Given the line above, this cache check will effectively always be a cache miss now,
+    # but the structure is kept for when the clear() line is removed.
     if user_query in llm_response_cache:
         print(f"[DEBUG] Returning cached LLM response for query: {user_query}")
         return llm_response_cache[user_query]
 
-    print(f"[DEBUG] Querying LLM (not cached): {user_query}")
+    print(f"[DEBUG] Querying LLM (not cached or cache cleared): {user_query}")
     try:
         formatted_prompt = prompt.format(query=user_query)
         response_text = llm.invoke(formatted_prompt)
