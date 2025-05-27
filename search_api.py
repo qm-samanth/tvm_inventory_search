@@ -17,7 +17,8 @@ from utils import (
     load_model_make_mapping_from_csv,
     MODEL_TO_MAKE_DATA, # Import the dictionary itself
     ALLOWED_PARAMS,
-    SUPPORTED_TYPES
+    SUPPORTED_TYPES,
+    VALID_QUERY_PARAM_TYPES # Add this import
 ) # Changed to absolute import
 
 app = FastAPI()
@@ -48,6 +49,23 @@ def extract_params(user_query):
     print("[DEBUG] Initial params from LLM:", params)
     user_query_lower = user_query.lower()
     print("[DEBUG] User query (lower):", user_query_lower)
+
+    # --- Handle "certified" as "cpo" for type ---
+    if "certified" in user_query_lower and "cpo" not in user_query_lower:
+        # If LLM didn\'t pick up "type" or picked up something else, 
+        # and "certified" is in query, force type to "cpo".
+        # This also handles if LLM put "certified" in params['type'].
+        llm_type = params.get("type")
+        if isinstance(llm_type, str) and "certified" in llm_type.lower():
+            print(f"[DEBUG] LLM type was '{llm_type}'. Query contains 'certified'. Setting type to 'cpo'.")
+            params["type"] = "cpo"
+        elif is_effectively_none_or_absent(llm_type):
+            print(f"[DEBUG] Query contains 'certified' and LLM type is absent. Setting type to 'cpo'.")
+            params["type"] = "cpo"
+        # If LLM picked up another valid type, and "certified" is also in query, 
+        # we might need a more nuanced rule, but for now, "certified" implies "type=cpo".
+        # This could override a more specific type if LLM found one, e.g. "certified sedan".
+        # Current logic will make it "cpo". If "vehicletypes" is "sedan", that will remain.
 
     # --- Start of Make/Model Correction from LOADED_MODEL_MAKE_MAPPING ---
     llm_make_val = params.get("make")
@@ -491,14 +509,15 @@ def extract_params(user_query):
         print(f"[DEBUG] Final type set from explicit query mention: {params['type']}")
     else:
         # If no explicit type (new, used, cpo) was found in the user's query text,
-        # remove any 'type' the LLM might have provided. The prompt instructs
-        # the LLM to only include explicitly mentioned fields. If the LLM still provides it,
-        # we override that here for the 'type' field to ensure adherence to the rule.
-        # The year-based logic in Step 7 can later infer 'used' if applicable.
-        if 'type' in params:
-            llm_provided_type_val = params.get('type')
-            print(f"[DEBUG] Removing LLM-provided 'type': '{llm_provided_type_val}' because no explicit type (new/used/cpo) was found in the user query text.")
-            params.pop('type')
+        # check if LLM provided a type and if it's valid.
+        llm_provided_type_val = params.get('type')
+        if not is_effectively_none_or_absent(llm_provided_type_val):
+            if isinstance(llm_provided_type_val, str) and llm_provided_type_val.lower() in VALID_QUERY_PARAM_TYPES:
+                params['type'] = llm_provided_type_val.lower() # Ensure it's stored in lowercase
+                print(f"[DEBUG] No explicit type in query, but LLM provided a valid type: '{params['type']}'. Retaining it.")
+            else:
+                print(f"[DEBUG] Removing LLM-provided 'type': '{llm_provided_type_val}' because it was not explicit in query and is not one of {VALID_QUERY_PARAM_TYPES}.")
+                params.pop('type', None)
         else:
             print(f"[DEBUG] No explicit type in query, and LLM did not provide 'type'. 'type' remains unset before year logic.")
 

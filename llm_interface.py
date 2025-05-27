@@ -16,7 +16,8 @@ prompt = PromptTemplate(
     input_variables=["query"],
     template=(
         "Extract the following fields from this vehicle search query, but ONLY include a field if it is explicitly mentioned in the query: "
-        "year, make, model, trim, color, vehicle type, transmission, features, mileage, and type (used/new/certified). "
+        "year, make, model, trim, color, vehicle type, transmission, features, mileage, and type. "
+        "For the 'type' field: if the query mentions 'certified' or 'cpo', the value for 'type' should be 'cpo'. If the query mentions 'used' or 'pre-owned', the value for 'type' should be 'used'. If the query mentions 'new', the value for 'type' should be 'new'. "
         "Also extract price information: if a price range like 'between X and Y' or 'X to Y' is given, populate 'paymentmin' with X and 'paymentmax' with Y. "
         "If only one price is mentioned (e.g., 'under X', 'around X', 'less than X', 'at most X', 'below X'), populate 'paymentmax' with X. "
         "If the query says 'over X', 'starting at X', 'more than X', 'at least X'), populate 'paymentmin' with X. "

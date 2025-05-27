@@ -8,6 +8,8 @@ ALLOWED_PARAMS = {
     'mileagemin', 'mileagemax'
 }
 
+VALID_QUERY_PARAM_TYPES = ["new", "used", "cpo"]
+
 SUPPORTED_TYPES = [
     'convertible', 'coupe', 'suv', 'sedan', 'truck', 'van', 'wagon', 'hatchback', 'mpv'
 ]
