@@ -5,7 +5,7 @@ import re
 ALLOWED_PARAMS = {
     'year', 'make', 'model', 'trim', 'color', 'vehicletypes', 'transmissions',
     'featuresubcategories', 'paymentmax', 'paymentmin', 'type',
-    'mileagemin', 'mileagemax'
+    'mileagemin', 'mileagemax', 'drivetrains'
 }
 
 VALID_QUERY_PARAM_TYPES = ["new", "used", "cpo"]
@@ -20,6 +20,8 @@ MILEAGE_VALUE_STRIP_KEYWORDS = [
     "under ", "less than ", "at most ", "maximum ", " up to ", "below ",
     "over ", "starting at ", "more than ", "at least ", "minimum "
 ]
+
+VALID_DRIVETRAINS = ["4WD", "AWD", "2WD", "FWD", "RWD"] # Added new constant
 
 # --- Helper Functions ---
 def is_effectively_none_or_absent(param_val):

@@ -18,7 +18,8 @@ from utils import (
     MODEL_TO_MAKE_DATA, # Import the dictionary itself
     ALLOWED_PARAMS,
     SUPPORTED_TYPES,
-    VALID_QUERY_PARAM_TYPES # Add this import
+    VALID_QUERY_PARAM_TYPES, # Add this import
+    VALID_DRIVETRAINS # Add this import
 ) # Changed to absolute import
 
 app = FastAPI()
@@ -210,6 +211,69 @@ def extract_params(user_query):
     
     print(f"[DIAGNOSTIC] Params after Make-Model Consistency Check: make='{params.get('make')}', model='{params.get('model')}'")
     # --- End of Make-Model Consistency Check ---
+
+    # --- Start of Drivetrain Logic ---
+    llm_drivetrain_raw = params.get("drivetrains")
+    print(f"[DEBUG] LLM provided drivetrains (raw): {llm_drivetrain_raw}")
+
+    llm_drivetrain_processed = None
+
+    if isinstance(llm_drivetrain_raw, list):
+        if len(llm_drivetrain_raw) > 0 and isinstance(llm_drivetrain_raw[0], str):
+            llm_drivetrain_processed = llm_drivetrain_raw[0]
+            print(f"[DEBUG] LLM drivetrain was a list, using first element: '{llm_drivetrain_processed}'")
+        else:
+            print(f"[DEBUG] LLM drivetrain was a list, but not in expected format (e.g., empty or non-string element): {llm_drivetrain_raw}. Removing.")
+            params.pop("drivetrains", None)
+    elif isinstance(llm_drivetrain_raw, str):
+        llm_drivetrain_processed = llm_drivetrain_raw
+        print(f"[DEBUG] LLM drivetrain is a string: '{llm_drivetrain_processed}'")
+    elif llm_drivetrain_raw is not None: # It's not a list, not a string, but not None (e.g. number)
+        print(f"[DEBUG] LLM drivetrain '{llm_drivetrain_raw}' is not a list or string. Removing.")
+        params.pop("drivetrains", None)
+    # If llm_drivetrain_raw was None, llm_drivetrain_processed remains None, and "drivetrains" key is not in params or was already popped.
+
+    if llm_drivetrain_processed:
+        llm_drivetrain_upper = llm_drivetrain_processed.upper()
+        if llm_drivetrain_upper in VALID_DRIVETRAINS:
+            params["drivetrains"] = llm_drivetrain_upper
+            print(f"[DEBUG] Normalized LLM drivetrain to: {params['drivetrains']}")
+        else:
+            print(f"[DEBUG] Processed LLM drivetrain '{llm_drivetrain_processed}' (upper: '{llm_drivetrain_upper}') is not in VALID_DRIVETRAINS. Removing.")
+            params.pop("drivetrains", None)
+    elif "drivetrains" in params and llm_drivetrain_raw is not None : # If it was popped due to format issues above.
+        # This case handles if llm_drivetrain_raw was a list but not valid, or other non-string non-None type.
+        # If llm_drivetrain_raw was None initially, llm_drivetrain_processed is None, and this branch isn't hit.
+        # If llm_drivetrain_processed is None because llm_drivetrain_raw was an invalid list/type, ensure it's popped.
+        if not llm_drivetrain_processed: # Redundant check, but for clarity
+             params.pop("drivetrains", None)
+
+
+    # Check user query for explicit drivetrain mentions, potentially overriding LLM
+    # This allows for direct keyword matching to take precedence or fill in if LLM misses.
+    # Example: "FWD car" or "I want an AWD SUV"
+    # We will take the *first* valid drivetrain found in the query if multiple are mentioned.
+    # This is a simple approach; more complex NLP could be used for nuanced interpretations.
+    
+    found_drivetrain_in_query = None
+    for dt_keyword in VALID_DRIVETRAINS: # e.g., "FWD", "AWD"
+        # Search for whole word matches of the keyword
+        if re.search(rf'\\b{re.escape(dt_keyword)}\\b', user_query_lower, re.IGNORECASE):
+            found_drivetrain_in_query = dt_keyword
+            print(f"[DEBUG] Found drivetrain keyword in query: '{dt_keyword}'")
+            break # Take the first one found
+
+    # If a valid drivetrain was found via keyword search in the query,
+    # it takes precedence over or fills in for the LLM's output.
+    if found_drivetrain_in_query:
+        if params.get("drivetrains") != found_drivetrain_in_query:
+            print(f"[DEBUG] Overriding/setting drivetrain based on query keyword. Old: '{params.get('drivetrains')}', New: '{found_drivetrain_in_query}'.")
+            params["drivetrains"] = found_drivetrain_in_query
+    elif "drivetrains" not in params: # LLM didn't provide it and query keyword didn't set it
+         print(f"[DEBUG] No drivetrain information found from LLM or query keywords.")
+    
+    print(f"[DEBUG] Params after drivetrain logic: {params.get('drivetrains')}")
+    # --- End of Drivetrain Logic ---
 
     # --- Start of Final Make Validation ---
     # This block ensures that the 'make' parameter, after all corrections, is a known make.
