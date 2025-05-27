@@ -179,6 +179,38 @@ def extract_params(user_query):
             print(f"[DEBUG] Model '{current_model_val}' is valid. Storing/ensuring as hyphenated: '{params['model']}'.")
     # --- End of Non-CSV Model Name Removal ---
 
+    # --- Start of Make-Model Consistency Check ---
+    # This block ensures that if a valid model is present, the make parameter aligns with MODEL_TO_MAKE_DATA.
+    # It runs AFTER the "Non-CSV Model Name Removal" which validates and normalizes params['model'].
+    final_model_val = params.get("model")
+    final_make_val = params.get("make")
+
+    if isinstance(final_model_val, str) and isinstance(final_make_val, str) and MODEL_TO_MAKE_DATA:
+        # model_val should already be lowercased and hyphenated by the "Non-CSV Model Name Removal" block.
+        # Keys in MODEL_TO_MAKE_DATA are lowercased.
+        model_key_for_lookup = final_model_val # Already normalized (lower, hyphenated)
+        
+        if model_key_for_lookup in MODEL_TO_MAKE_DATA:
+            true_make_for_model_from_csv = MODEL_TO_MAKE_DATA[model_key_for_lookup]
+            current_make_in_params_lower = final_make_val.lower()
+
+            if current_make_in_params_lower != true_make_for_model_from_csv:
+                print(f"[DEBUG] Make-Model Inconsistency Correction: Initial make was '{final_make_val}', model was '{final_model_val}'. "
+                      f"Model '{model_key_for_lookup}' is associated with make '{true_make_for_model_from_csv}' in CSV. "
+                      f"Updating make from '{final_make_val}' to '{true_make_for_model_from_csv}'.")
+                params["make"] = true_make_for_model_from_csv
+            else:
+                print(f"[DEBUG] Make-Model Consistency Check: Make '{final_make_val}' for model '{final_model_val}' is consistent with CSV data ('{true_make_for_model_from_csv}'). No change.")
+        else:
+            # This case implies that params["model"] exists but is not a key in MODEL_TO_MAKE_DATA.
+            # This should ideally be prevented by the "Non-CSV Model Name Removal" block,
+            # which should have removed such a model. This log is a safeguard.
+            print(f"[WARN] Make-Model Consistency Check: Model '{model_key_for_lookup}' (from params) not found as a key in MODEL_TO_MAKE_DATA. "
+                  f"Cannot verify/correct make consistency for make '{final_make_val}'. This might indicate an issue with prior model validation steps.")
+    
+    print(f"[DIAGNOSTIC] Params after Make-Model Consistency Check: make='{params.get('make')}', model='{params.get('model')}'")
+    # --- End of Make-Model Consistency Check ---
+
     # --- Start of Price Logic Refinement ---
 
     upper_bound_keywords = ["under ", "less than ", "at most ", "maximum ", " up to ", "below "] # ADDED "below "
