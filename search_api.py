@@ -533,18 +533,21 @@ def extract_params(user_query):
     query_words = re.findall(r'\b\w+\b', user_query_lower)
     cpo_keyword_match = 'cpo' in query_words
     new_keyword_match = 'new' in query_words
+    certified_keyword_match = 'certified' in query_words # Added this line
 
     print(f"[DEBUG] User query lower: '{user_query_lower}'")
     print(f"[DEBUG] Query words for type check: {query_words}")
     print(f"[DEBUG] Preowned/used pattern match in user query: {preowned_match}")
     print(f"[DEBUG] Certified pre-owned pattern match in user query: {certified_preowned_match}")
     print(f"[DEBUG] CPO keyword match in user query: {cpo_keyword_match}")
+    print(f"[DEBUG] CERTIFIED keyword match in user query: {certified_keyword_match}") # Added this log
     print(f"[DEBUG] NEW keyword match in user query: {new_keyword_match}")
 
     explicit_type_from_query = None
-    if certified_preowned_match or cpo_keyword_match:
+    # Updated condition to include certified_keyword_match
+    if certified_preowned_match or cpo_keyword_match or certified_keyword_match:
         explicit_type_from_query = 'cpo'
-        print(f"[DEBUG] Type interpreted as 'cpo' from query text.")
+        print(f"[DEBUG] Type interpreted as 'cpo' from query text (cpo_keyword_match, certified_preowned_match, or certified_keyword_match).")
     elif preowned_match:
         explicit_type_from_query = 'used'
         print(f"[DEBUG] Type interpreted as 'used' from query text.")
