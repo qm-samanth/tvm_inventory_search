@@ -211,6 +211,23 @@ def extract_params(user_query):
     print(f"[DIAGNOSTIC] Params after Make-Model Consistency Check: make='{params.get('make')}', model='{params.get('model')}'")
     # --- End of Make-Model Consistency Check ---
 
+    # --- Start of Final Make Validation ---
+    # This block ensures that the 'make' parameter, after all corrections, is a known make.
+    current_make_val = params.get("make")
+    if isinstance(current_make_val, str) and MODEL_TO_MAKE_DATA:
+        # Get all unique makes from the CSV data (values in MODEL_TO_MAKE_DATA)
+        # Ensure they are all lowercased for consistent comparison.
+        known_makes_from_csv = {make_name.lower() for make_name in MODEL_TO_MAKE_DATA.values()}
+        
+        if current_make_val.lower() not in known_makes_from_csv:
+            print(f"[DEBUG] Final Make Validation: Make value '{current_make_val}' is not a recognized make found in MODEL_TO_MAKE_DATA values. Removing 'make' parameter.")
+            params.pop("make", None)
+        else:
+            print(f"[DEBUG] Final Make Validation: Make value '{current_make_val}' is a recognized make. No change.")
+    elif isinstance(current_make_val, str) and not MODEL_TO_MAKE_DATA:
+        print("[WARN] Final Make Validation: MODEL_TO_MAKE_DATA is not loaded. Cannot validate make parameter.")
+    # --- End of Final Make Validation ---
+
     # --- Start of Price Logic Refinement ---
 
     upper_bound_keywords = ["under ", "less than ", "at most ", "maximum ", " up to ", "below "] # ADDED "below "
