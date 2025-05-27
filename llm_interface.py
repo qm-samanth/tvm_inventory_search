@@ -6,6 +6,9 @@ from langchain.prompts import PromptTemplate
 # LLM Configuration
 llm = OllamaLLM(model="llama3.2")
 
+# Print which LLM model we're using
+print(f"[DEBUG] Initialized LLM with model: {llm.model}")
+
 # --- LLM Cache ---
 # Simple in-memory cache. For a production system, consider a more robust
 # caching solution like Redis or a library like cachetools with TTL.
@@ -50,7 +53,7 @@ def get_llm_params_from_query(user_query: str) -> dict:
         print(f"[DEBUG] Returning cached LLM response for query: {user_query}")
         return llm_response_cache[user_query]
 
-    print(f"[DEBUG] Querying LLM (not cached or cache cleared): {user_query}")
+    print(f"[DEBUG] Querying LLM model '{llm.model}' (not cached or cache cleared): {user_query}")
     try:
         formatted_prompt = prompt.format(query=user_query)
         response_text = llm.invoke(formatted_prompt)
