@@ -17,28 +17,61 @@ llm_response_cache = {}
 
 prompt = PromptTemplate(
     input_variables=["query"],
-    template=(
-        "Extract the following fields from this vehicle search query, but ONLY include a field if it is explicitly mentioned in the query: "
-        "year, make, model, trim, color, vehicle type, transmission, features, mileage, type, and drivetrains. "
-        "For the 'type' field: if the query mentions 'certified' or 'cpo', the value for 'type' should be 'cpo'. If the query mentions 'used' or 'pre-owned', the value for 'type' should be 'used'. If the query mentions 'new', the value for 'type' should be 'new'. "
-        "For the 'transmissions' field, if mentioned, the value should be one of: \"manual\", \"automatic\", or \"cvt\". If the query implies one of these but uses different wording (e.g., 'stick shift' for manual, 'auto' for automatic), map it to the correct value. Ensure that terms like \"cvt\" are placed in the 'transmissions' field and NOT in 'vehicletypes'. "
-        "For the 'drivetrains' field, if mentioned, the value should be one of: \"4wd\", \"awd\", \"2wd\", \"fwd\", or \"rwd\". If the query implies one of these but uses different wording (e.g., 'four-wheel drive' for 4wd, 'all-wheel drive' for awd, 'front-wheel drive' for fwd, 'rear-wheel drive' for rwd, 'two-wheel drive' for 2wd), map it to the correct lowercase value. "
-        "For the 'featuresubcategories' field, if a feature has multiple words, join them with an underscore (e.g., \"adaptive_cruise_control\", \"parking_sensors\"). "
-        "Also extract price information: if a price range like 'between X and Y' or 'X to Y' is given, populate 'paymentmin' with X and 'paymentmax' with Y. "
-        "If only one price is mentioned (e.g., 'under X', 'around X', 'less than X', 'at most X', 'below X'), populate 'paymentmax' with X. "
-        "If the query says 'over X', 'starting at X', 'more than X', 'at least X'), populate 'paymentmin' with X. "
-        "Also extract mileage information: if a mileage range like 'between X and Y miles' or 'X to Y miles' is given, populate 'mileagemin' with X and 'mileagemax' with Y. "
-        "If only one mileage is mentioned (e.g., 'under X miles', 'less than X miles', 'at most X miles', 'below X miles'), populate 'mileagemax' with X. "
-        "If the query says 'over X miles', 'starting at X miles', 'more than X miles', 'at least X miles'), populate 'mileagemin' with X. "
-        "Supported vehicle types for the 'vehicletypes' field are ONLY: convertible, coupe, suv, sedan, truck, van, wagon, hatchback, mpv. Do NOT put transmission types (e.g., cvt, manual, automatic) or any other terms in the 'vehicletypes' field. "
-        "If the query uses generic terms like 'car', 'cars', 'vehicle', or 'vehicles', do not include any value for 'vehicletypes' unless a specific supported type from the list above is also mentioned. "
-        "Do NOT guess or fill in any values that are not present in the query. "
-        "Return ONLY a single, valid JSON object. The JSON object must be pure JSON and must NOT contain any comments, explanations, or any other non-JSON text within it or around it. "
-        "Use these keys in the JSON: 'year', 'make', 'model', 'trim', 'color', 'vehicletypes' (for vehicle type), "
-        "'transmissions' (for transmission), 'featuresubcategories' (for features), 'type', 'paymentmin', 'paymentmax', "
-        "'mileagemin', 'mileagemax', 'drivetrains'. All keys and string values in the JSON should be lowercase. "
-        "Query: {query}"
-    ),
+    template="""Extract the following fields from this vehicle search query, but ONLY include a field if it is explicitly mentioned in the query:
+year, make, model, trim, color, vehicle type, transmission, features, mileage, type, and drivetrains.
+
+FIELD-SPECIFIC INSTRUCTIONS:
+
+1. TYPE FIELD:
+   - If query mentions 'certified' or 'cpo': value should be 'cpo'
+   - If query mentions 'used' or 'pre-owned': value should be 'used'
+   - If query mentions 'new': value should be 'new'
+
+2. TRANSMISSIONS FIELD:
+   - Allowed values: "manual", "automatic", or "cvt"
+   - Map alternative terms: 'stick shift' → manual, 'auto' → automatic
+   - Ensure CVT goes in 'transmissions' field, NOT 'vehicletypes'
+
+3. DRIVETRAINS FIELD:
+   - Allowed values: "4wd", "awd", "2wd", "fwd", or "rwd"
+   - Map alternative terms:
+     • 'four-wheel drive' → 4wd
+     • 'all-wheel drive' → awd
+     • 'front-wheel drive' → fwd
+     • 'rear-wheel drive' → rwd
+     • 'two-wheel drive' → 2wd
+   - All values should be lowercase
+
+4. FEATURES FIELD:
+   - For multi-word features, join with underscores
+   - Examples: "adaptive_cruise_control", "parking_sensors"
+
+5. VEHICLE TYPES FIELD:
+   - ONLY allowed values: convertible, coupe, suv, sedan, truck, van, wagon, hatchback, mpv
+   - Do NOT put transmission types (cvt, manual, automatic) in vehicletypes
+   - Generic terms like 'car', 'cars', 'vehicle', 'vehicles' should NOT be included
+   - Only include if a specific supported type is mentioned
+
+PRICE AND MILEAGE EXTRACTION:
+
+Price Information:
+- Range format ('between X and Y' or 'X to Y'): populate 'paymentmin' with X and 'paymentmax' with Y
+- Upper limit ('under X', 'around X', 'less than X', 'at most X', 'below X'): populate 'paymentmax' with X
+- Lower limit ('over X', 'starting at X', 'more than X', 'at least X'): populate 'paymentmin' with X
+
+Mileage Information:
+- Range format ('between X and Y miles' or 'X to Y miles'): populate 'mileagemin' with X and 'mileagemax' with Y
+- Upper limit ('under X miles', 'less than X miles', 'at most X miles', 'below X miles'): populate 'mileagemax' with X
+- Lower limit ('over X miles', 'starting at X miles', 'more than X miles', 'at least X miles'): populate 'mileagemin' with X
+
+IMPORTANT RULES:
+- Do NOT guess or fill in any values that are not present in the query
+- Return ONLY a single, valid JSON object
+- NO comments, explanations, or non-JSON text within or around the JSON
+- Use these keys: 'year', 'make', 'model', 'trim', 'color', 'vehicletypes', 'transmissions', 'featuresubcategories', 'type', 'paymentmin', 'paymentmax', 'mileagemin', 'mileagemax', 'drivetrains'
+- All keys and string values in the JSON should be lowercase
+
+Query: {query}""",
 )
 
 def get_llm_params_from_query(user_query: str) -> dict:
