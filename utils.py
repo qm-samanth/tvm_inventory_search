@@ -111,22 +111,37 @@ def normalize_value_for_collision_check(val_str_input):
 
 def load_model_make_mapping_from_csv():
     """Load model to make mapping from CSV file."""
-    # This function now directly modifies the MODEL_TO_MAKE_DATA in this module.
     global MODEL_TO_MAKE_DATA
-    mapping_file_path = "model_make_map.csv" 
+    mapping_file_path = "model_make_map.csv"
     temp_model_to_make_data = {}
+    lines_read = 0
+    lines_skipped_format = 0
+    lines_skipped_empty = 0
+    lines_loaded = 0
     try:
         with open(mapping_file_path, mode='r', encoding='utf-8') as infile:
             reader = csv.reader(infile)
             for rows in reader:
+                lines_read += 1
                 if len(rows) == 2:
                     make_from_csv = rows[0].strip().lower()
                     model_from_csv = rows[1].strip().lower()
+
                     if model_from_csv and make_from_csv:
+                        if model_from_csv in temp_model_to_make_data and temp_model_to_make_data[model_from_csv] != make_from_csv:
+                            print(f"[WARN] CSV_LOAD: Duplicate model '{model_from_csv}' on line {lines_read}. Old make: '{temp_model_to_make_data[model_from_csv]}', New make: '{make_from_csv}'. Overwriting.")
                         temp_model_to_make_data[model_from_csv] = make_from_csv
+                        lines_loaded += 1
+                    else:
+                        print(f"[DEBUG] CSV_LOAD: Skipped line {lines_read} due to empty make/model after strip: Original Make='{rows[0]}', Original Model='{rows[1]}'")
+                        lines_skipped_empty += 1
+                else:
+                    print(f"[DEBUG] CSV_LOAD: Skipped line {lines_read} due to incorrect format (expected 2 columns, got {len(rows)}): {rows}")
+                    lines_skipped_format += 1
+        
         MODEL_TO_MAKE_DATA.clear()
         MODEL_TO_MAKE_DATA.update(temp_model_to_make_data)
-        print(f"[INFO] Successfully loaded {len(MODEL_TO_MAKE_DATA)} model-make mappings from {mapping_file_path} into utils.MODEL_TO_MAKE_DATA")
+        print(f"[INFO] CSV_LOAD: Summary for {mapping_file_path} - Total lines read: {lines_read}, Successfully loaded: {lines_loaded}, Skipped (bad format): {lines_skipped_format}, Skipped (empty make/model): {lines_skipped_empty}")
     except FileNotFoundError:
         print(f"[ERROR] {mapping_file_path} not found. Model-make correction will not work.")
     except Exception as e:
