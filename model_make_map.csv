@@ -423,10 +423,10 @@ Cadillac,XT6
 Cadillac,DTS
 Cadillac,CTS-V Sedan
 Cadillac,Series 62 Coupe
-Cadillac Truck,Escalade Esv
-Cadillac Truck,Escalade
-Cadillac Truck,Xt4
-Cadillac Truck,Xt5
+Cadillac,Escalade Esv
+Cadillac,Escalade
+Cadillac,Xt4
+Cadillac,Xt5
 Cake,Kalk
 Camper,Brookstone
 CAN AM,SPYDER
@@ -509,7 +509,6 @@ Chevrolet,3500 LCF Gas
 Chevrolet,V10 Fleetside 1/2 Ton Pickup
 CHEVROLET,SIVERADO 1500
 Chevrolet,Nova
-Chevrolet,Truck
 Chevrolet,Silverado 1500 Classic
 Chevrolet,C/K 20
 Chevrolet,SSR
@@ -615,19 +614,19 @@ Chevrolet,Express Van
 Chevrolet,7500 XD LCF Diesel
 Chevrolet,Spark EV
 Chevrolet,4500 LCF Gas
-Chevrolet Truck,Express Passeng
-Chevrolet Truck,Equinox
-Chevrolet Truck,Colorado
-Chevrolet Truck,Blazer
-Chevrolet Truck,Suburban
-Chevrolet Truck,Tahoe
-CHEVROLET TRUCK,TRAILBLAZER
-Chevrolet Truck,Express Cargo V
-Chevrolet Truck,Traverse
-Chevrolet Truck,Silverado 1500
-Chevrolet Truck,Silverado 2500H
-Chevrolet Truck,Trax
-Chevrolet Truck,Silverado 3500H
+Chevrolet,Express Passeng
+Chevrolet,Equinox
+Chevrolet,Colorado
+Chevrolet,Blazer
+Chevrolet,Suburban
+Chevrolet,Tahoe
+CHEVROLET,TRAILBLAZER
+Chevrolet,Express Cargo V
+Chevrolet,Traverse
+Chevrolet,Silverado 1500
+Chevrolet,Silverado 2500H
+Chevrolet,Trax
+Chevrolet,Silverado 3500H
 Chevroletn,Silverado 3500HD CC
 Chevy,camaro
 CHEVY,NOVA
@@ -751,7 +750,7 @@ Dodge,DURANGO
 Dodge,Stratus Sdn
 Dodge,Lil Red Pickup
 Dodge Brothers,Touring Sedan
-Dodge Truck,Durango
+Dodge,Durango
 Ducati,695 Monster
 DUCATI,MOTORCYCLE
 DUCATI,SCRAMBLER ICON
@@ -906,7 +905,6 @@ Ford,SUPER DUTY F-250 SERVICE BODY SRW
 Ford,F-350SD
 Ford,Torino
 Ford,F350 W/ 9' Flatbed
-Ford,Truck
 Ford,F-150 SuperCrew
 Ford,E-Transit-350 Cargo Van
 Ford,Transit-150 Cargo Van
@@ -1665,8 +1663,8 @@ Isuzu,NPRXD
 Isuzu,1G404
 Isuzu NPR Gas Cab & Chassis,NPR
 Isuzu NRR Diesel w/ Morgan Ins,NRR Diesel
-ISUZU TRUCK,NPR XD
-ISUZU TRUCK,ISUZU TRUCK
+ISUZU,NPR XD
+ISUZU,ISUZU TRUCK
 Jaguar,XF
 Jaguar,E-PACE
 Jaguar,Mark V
@@ -1988,7 +1986,7 @@ Lincoln,MKZ
 Lincoln,MKZ Hybrid
 Lincoln,Zephyr
 Lincoln,MARK V
-Lincoln Truck,Corsair
+Lincoln,Corsair
 LINHAI,L200
 Linqacoln,Aviator
 LiveWire,S2 Del Mar
@@ -2275,7 +2273,7 @@ Mercedes-Benz,AMG GLE 53
 Mercedes-Benz,Amg Gt 53
 Mercedes-Benz,SL-Class
 Mercedes-Benz,CLS 450 Coupe
-MERCEDES-BENZ TRUCK,GLC 300
+MERCEDES-BENZ,GLC 300
 Mercury,Milan
 Mercury,Monterey
 Mercury,Capri
@@ -2902,22 +2900,21 @@ Toyota,TUNDRA 4X4 HYB
 Toyota,Tacoma 2WD
 Toyota,Camry XLE
 Toyota,RAV4 Hybrid Limited
-Toyota Truck,Venza
-TOYOTA TRUCK,SIENNA
-TOYOTA TRUCK,C-HR
-TOYOTA TRUCK,RAV4 PRIME
-TOYOTA TRUCK,4RUNNER
-Toyota Truck,Tundra 4Wd
-Toyota Truck,Tacoma 2Wd
-Toyota Truck,Sequoia
-Toyota Truck,Tundra 2Wd
-TOYOTA TRUCK,TACOMA
-TOYOTA TRUCK,HIGHLANDER
-TOYOTA TRUCK,RAV4
-TOYOTA TRUCK,TACOMA 4WD
-TOYOTA TRUCK,RAV4 HYBRID
-Toyota Truck,Tundra 2Wd Truc
-TOYT,SEDAN
+Toyota,Venza
+TOYOTA,SIENNA
+TOYOTA,C-HR
+TOYOTA,RAV4 PRIME
+TOYOTA,4RUNNER
+Toyota,Tundra 4Wd
+Toyota,Tacoma 2Wd
+Toyota,Sequoia
+Toyota,Tundra 2Wd
+TOYOTA,TACOMA
+TOYOTA,HIGHLANDER
+TOYOTA,RAV4
+TOYOTA,TACOMA 4WD
+TOYOTA,RAV4 HYBRID
+Toyota,Tundra 2Wd Truc
 TRAIL SERIES,OUTDOORS RV
 TRAILS WEST,RPM 28 SNOWMOBILE TRAILER
 TRAILTECH,MLC8634-75W
