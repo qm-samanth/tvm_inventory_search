@@ -19,7 +19,9 @@ from utils import (
     ALLOWED_PARAMS,
     SUPPORTED_TYPES,
     VALID_QUERY_PARAM_TYPES, # Add this import
-    VALID_DRIVETRAINS # Add this import
+    VALID_DRIVETRAINS, # Add this import
+    VALID_TRANSMISSIONS,
+    TRANSMISSION_KEYWORDS_MAP
 ) # Changed to absolute import
 
 app = FastAPI()
@@ -269,8 +271,12 @@ def extract_params(user_query):
         if params.get("drivetrains") != found_drivetrain_in_query:
             print(f"[DEBUG] Overriding/setting drivetrain based on query keyword. Old: '{params.get('drivetrains')}', New: '{found_drivetrain_in_query}'.")
             params["drivetrains"] = found_drivetrain_in_query
-    elif "drivetrains" not in params: # LLM didn't provide it and query keyword didn't set it
-         print(f"[DEBUG] No drivetrain information found from LLM or query keywords.")
+    elif "drivetrains" in params:
+        # LLM provided drivetrain but no drivetrain keywords found in query - remove it to prevent hallucination
+        print(f"[DEBUG] LLM provided drivetrain '{params.get('drivetrains')}' but no drivetrain keywords found in query. Removing to prevent hallucination.")
+        params.pop("drivetrains", None)
+    else:
+        print(f"[DEBUG] No drivetrain information found from LLM or query keywords.")
     
     print(f"[DEBUG] Params after drivetrain logic: {params.get('drivetrains')}")
     # --- End of Drivetrain Logic ---
@@ -310,6 +316,51 @@ def extract_params(user_query):
         else:
             print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' not recognized. Removing.")
             params.pop("transmissions", None)
+    
+    # --- Transmission Validation: Check if user actually mentioned transmission keywords ---
+    # This prevents LLM hallucination by verifying transmission keywords exist in the original query
+    if "transmissions" in params:
+        user_query_lower = user_query.lower()
+        found_transmission_in_query = False
+        found_transmission_type = None
+        
+        # Check if any transmission keywords are actually mentioned in the query
+        for transmission_type, keywords in TRANSMISSION_KEYWORDS_MAP.items():
+            for keyword in keywords:
+                if re.search(rf'\b{re.escape(keyword)}\b', user_query_lower, re.IGNORECASE):
+                    found_transmission_in_query = True
+                    found_transmission_type = transmission_type
+                    print(f"[DEBUG] Found transmission keyword '{keyword}' in query, maps to type: '{transmission_type}'")
+                    break
+            if found_transmission_in_query:
+                break
+        
+        if not found_transmission_in_query:
+            # LLM provided transmission but user didn't actually mention it - remove it
+            print(f"[DEBUG] LLM provided transmission '{params.get('transmissions')}' but no transmission keywords found in query. Removing to prevent hallucination.")
+            params.pop("transmissions", None)
+        else:
+            # Validate that LLM's output matches what user actually mentioned
+            current_transmission = params.get("transmissions", "").lower()
+            if found_transmission_type:
+                # Apply the CVT/automatic rule with validation
+                if found_transmission_type == "cvt" or found_transmission_type == "automatic":
+                    # Check if user mentioned both or just one
+                    user_mentioned_cvt = any(re.search(rf'\b{re.escape(kw)}\b', user_query_lower, re.IGNORECASE) 
+                                           for kw in TRANSMISSION_KEYWORDS_MAP["cvt"])
+                    user_mentioned_auto = any(re.search(rf'\b{re.escape(kw)}\b', user_query_lower, re.IGNORECASE) 
+                                            for kw in TRANSMISSION_KEYWORDS_MAP["automatic"])
+                    
+                    if user_mentioned_cvt or user_mentioned_auto:
+                        params["transmissions"] = "cvt,automatic"
+                        print(f"[DEBUG] User mentioned CVT or automatic transmission. Setting both: 'cvt,automatic'")
+                    else:
+                        print(f"[DEBUG] Transmission validation mismatch. Removing.")
+                        params.pop("transmissions", None)
+                elif found_transmission_type == "manual":
+                    params["transmissions"] = "manual"
+                    print(f"[DEBUG] User mentioned manual transmission. Confirmed: 'manual'")
+    # --- End Transmission Validation ---
     
     print(f"[DEBUG] Params after transmission logic: {params.get('transmissions')}")
     # --- End of Transmission Logic ---

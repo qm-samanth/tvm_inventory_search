@@ -23,6 +23,14 @@ MILEAGE_VALUE_STRIP_KEYWORDS = [
 
 VALID_DRIVETRAINS = ["4WD", "AWD", "2WD", "FWD", "RWD"] # Added new constant
 
+# Valid transmission types and their keyword mappings
+VALID_TRANSMISSIONS = ["manual", "automatic", "cvt"]
+TRANSMISSION_KEYWORDS_MAP = {
+    "manual": ["manual", "stick", "stick shift", "standard", "mt"],
+    "automatic": ["automatic", "auto", "at"], 
+    "cvt": ["cvt", "continuously variable"]
+}
+
 # --- Helper Functions ---
 def is_effectively_none_or_absent(param_val):
     if param_val is None:

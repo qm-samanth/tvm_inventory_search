@@ -18,7 +18,7 @@ llm_response_cache = {}
 prompt = PromptTemplate(
     input_variables=["query"],
     template="""Extract the following fields from this vehicle search query, but ONLY include a field if it is explicitly mentioned in the query:
-year, make, model, trim, color, vehicle type, transmission, features, mileage, type, and drivetrains.
+year, make, model, trim, color, vehicle type, transmission, features, mileagemin, mileagemax, paymentmin, paymentmax, type, and drivetrains.
 
 FIELD-SPECIFIC INSTRUCTIONS:
 
