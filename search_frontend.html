@@ -32,7 +32,8 @@
                 const response = await fetch('http://localhost:8000/api/search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query })
+                    //body: JSON.stringify({ query, model: 'gemini-1.5-flash' })
+                   body: JSON.stringify({ query, model: 'llama3.2' })
                 });
                 if (!response.ok) throw new Error('API error');
                 const data = await response.json();
@@ -120,12 +121,13 @@
                 // Assuming your FastAPI server runs on localhost:8000
                 // If it's different, or if search_frontend.html is served by FastAPI itself,
                 // you might be able to use a relative path like '/api/search'
+                //gemini-1.5-flash, llama3.2
                 const response = await fetch('http://localhost:8000/api/search', { 
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ query: query }),
+                    body: JSON.stringify({ query: query, model: 'gemini-1.5-flash' }),
                 });
 
                 const resultDiv = document.createElement('div');

@@ -41,13 +41,22 @@ app.add_middleware(
 
 class QueryRequest(BaseModel):
     query: str
+    model: str = None  # Optional model parameter: "gemini-1.5-flash" or "llama3.2"
 
-def extract_params(user_query):
+def extract_params(user_query, model_name=None):
     # Step 1: Get initial params from LLM
-    params = get_llm_params_from_query(user_query) # Use the new function from llm_interface
+    params = get_llm_params_from_query(user_query, model_name) # Pass model parameter
     if not params: # If params is empty due to an error in _get_llm_params
         print("[DEBUG] get_llm_params_from_query returned empty. Aborting extract_params.")
         return {}
+    
+    # Ensure params is a dictionary and clean any None values
+    if not isinstance(params, dict):
+        print(f"[DEBUG] LLM returned non-dict response: {type(params)}. Aborting extract_params.")
+        return {}
+    
+    # Clean None values from params to prevent AttributeError
+    params = {k: v for k, v in params.items() if v is not None}
 
     print("[DEBUG] Initial params from LLM:", params)
     user_query_lower = user_query.lower()
@@ -260,7 +269,7 @@ def extract_params(user_query):
     found_drivetrain_in_query = None
     for dt_keyword in VALID_DRIVETRAINS: # e.g., "FWD", "AWD"
         # Search for whole word matches of the keyword
-        if re.search(rf'\\b{re.escape(dt_keyword)}\\b', user_query_lower, re.IGNORECASE):
+        if re.search(rf'\b{re.escape(dt_keyword)}\b', user_query_lower, re.IGNORECASE):
             found_drivetrain_in_query = dt_keyword
             print(f"[DEBUG] Found drivetrain keyword in query: '{dt_keyword}'")
             break # Take the first one found
@@ -302,10 +311,23 @@ def extract_params(user_query):
         params.pop("transmissions", None)
 
     # Apply the CVT/automatic rule: if user mentions either, return both
-    if llm_transmission_processed:
+    if llm_transmission_processed and isinstance(llm_transmission_processed, str):
         llm_transmission_lower = llm_transmission_processed.lower().strip()
         
-        if llm_transmission_lower in ["cvt", "automatic", "auto"]:
+        # Handle comma-separated values (e.g., "cvt,automatic")
+        if "," in llm_transmission_lower:
+            transmission_parts = [part.strip() for part in llm_transmission_lower.split(",")]
+            # If any part is cvt or automatic related, set both
+            if any(part in ["cvt", "automatic", "auto"] for part in transmission_parts):
+                params["transmissions"] = "cvt,automatic"
+                print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' contains CVT/automatic. Setting to: 'cvt,automatic'")
+            elif any(part in ["manual", "stick"] for part in transmission_parts):
+                params["transmissions"] = "manual"
+                print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' contains manual. Setting to: 'manual'")
+            else:
+                print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' not recognized. Removing.")
+                params.pop("transmissions", None)
+        elif llm_transmission_lower in ["cvt", "automatic", "auto"]:
             # If LLM detected cvt or automatic (or auto), set both
             params["transmissions"] = "cvt,automatic"
             print(f"[DEBUG] LLM transmission '{llm_transmission_processed}' detected as CVT or automatic. Setting to: 'cvt,automatic'")
@@ -341,7 +363,8 @@ def extract_params(user_query):
             params.pop("transmissions", None)
         else:
             # Validate that LLM's output matches what user actually mentioned
-            current_transmission = params.get("transmissions", "").lower()
+            current_transmission = params.get("transmissions") or ""
+            current_transmission = current_transmission.lower() if current_transmission else ""
             if found_transmission_type:
                 # Apply the CVT/automatic rule with validation
                 if found_transmission_type == "cvt" or found_transmission_type == "automatic":
@@ -891,6 +914,21 @@ def build_inventory_url(base_url, params):
 
 @app.post("/api/search")
 async def search(request: QueryRequest):
-    params = extract_params(request.query)
-    url = build_inventory_url("https://www.paragonhonda.com/inventory?paymenttype=cash", params)
-    return {"url": url, "params": params}
+    params = extract_params(request.query, request.model)
+    url = build_inventory_url("https://www.gaudinford.com/inventory?paymenttype=cash", params)
+    return {"url": url, "params": params, "model_used": request.model or "default"}
+
+@app.get("/api/models")
+async def get_available_models():
+    """Get list of available LLM models"""
+    return {
+        "available_models": [
+            "gemini-1.5-flash",
+            "llama3.2"
+        ],
+        "default_model": "gemini-1.5-flash",
+        "description": {
+            "gemini-1.5-flash": "Google Gemini 1.5 Flash - Fast and accurate",
+            "llama3.2": "Ollama Llama 3.2 - Local model, requires Ollama running"
+        }
+    }

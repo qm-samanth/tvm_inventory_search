@@ -1,13 +1,24 @@
 import re
 import json
+import os
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 
-# LLM Configuration
-llm = OllamaLLM(model="llama3.2")
-
-# Print which LLM model we're using
-print(f"[DEBUG] Initialized LLM with model: {llm.model}")
+def initialize_llm_with_model(model_name: str):
+    """Initialize the LLM with a specific model name."""
+    if model_name.startswith("gemini"):
+        print(f"[DEBUG] Initializing {model_name}...")
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0.1,
+            google_api_key="AIzaSyBLUvd17J8wC8dcGLnIYue5jEZfyfMmsrs"
+        )
+    elif model_name.startswith("llama"):
+        print(f"[DEBUG] Initializing {model_name}...")
+        return OllamaLLM(model=model_name)
+    else:
+        raise ValueError(f"Unsupported model: {model_name}. Supported models: gemini-1.5-flash, llama3.2")
 
 # --- LLM Cache ---
 # Simple in-memory cache. For a production system, consider a more robust
@@ -46,9 +57,10 @@ FIELD-SPECIFIC INSTRUCTIONS:
      • 'two-wheel drive' → 2wd
    - All values should be lowercase
 
-4. FEATURES FIELD:
+4. FEATURESUBCATEGORIES FIELD:
+   🚫 DO NOT include 'featuresubcategories' unless user specifically mentions features
    - For multi-word features, join with underscores
-   - Examples: "adaptive_cruise_control", "parking_sensors"
+   - Examples: "apple_carplay", "android_auto", "adaptive_cruise_control", "parking_sensors"
 
 5. VEHICLE TYPES FIELD:
    - ONLY allowed values: convertible, coupe, suv, sedan, truck, van, wagon, hatchback, mpv
@@ -97,22 +109,58 @@ IMPORTANT RULES:
 Query: {query}""",
 )
 
-def get_llm_params_from_query(user_query: str) -> dict:
-    """Helper function to call LLM and parse its JSON response, with caching."""
+def get_llm_params_from_query(user_query: str, model_name: str = None) -> dict:
+    """Helper function to call LLM and parse its JSON response, with caching.
+    
+    Args:
+        user_query: The user's search query
+        model_name: Optional model to use. Defaults to "gemini-1.5-flash" if None.
+                   Supported values: "gemini-1.5-flash", "llama3.2"
+    """
+    
+    # Use specific model if provided, otherwise use default
+    if model_name:
+        try:
+            current_llm = initialize_llm_with_model(model_name)
+            provider = "gemini" if model_name.startswith("gemini") else "ollama"
+            print(f"[DEBUG] Using specific model: {model_name}")
+        except Exception as e:
+            print(f"[DEBUG] Error initializing model {model_name}: {e}")
+            # Fallback to default model
+            model_name = "gemini-1.5-flash"
+            current_llm = initialize_llm_with_model(model_name)
+            provider = "gemini"
+            print(f"[DEBUG] Falling back to default model: {model_name}")
+    else:
+        # Default to Gemini if no model specified
+        model_name = "gemini-1.5-flash"
+        current_llm = initialize_llm_with_model(model_name)
+        provider = "gemini"
+        print(f"[DEBUG] Using default model: {model_name}")
     
     llm_response_cache.clear() # TEMPORARY: Clears cache on every call for testing
 
     # Check cache first
-    # Given the line above, this cache check will effectively always be a cache miss now,
-    # but the structure is kept for when the clear() line is removed.
-    if user_query in llm_response_cache:
+    cache_key = f"{model_name}:{user_query}"
+    if cache_key in llm_response_cache:
         print(f"[DEBUG] Returning cached LLM response for query: {user_query}")
-        return llm_response_cache[user_query]
+        return llm_response_cache[cache_key]
 
-    print(f"[DEBUG] Querying LLM model '{llm.model}' (not cached or cache cleared): {user_query}")
+    print(f"[DEBUG] Querying LLM with provider '{provider}' (not cached or cache cleared): {user_query}")
     try:
         formatted_prompt = prompt.format(query=user_query)
-        response_text = llm.invoke(formatted_prompt)
+        response = current_llm.invoke(formatted_prompt)
+        
+        # Handle different response types based on provider
+        if provider == "gemini":
+            # ChatGoogleGenerativeAI returns a message object, extract the content
+            response_text = response.content if hasattr(response, 'content') else str(response)
+        elif provider == "ollama":
+            # OllamaLLM returns a string directly
+            response_text = response
+        else:
+            response_text = str(response)
+            
     except Exception as e:
         print(f"[DEBUG] Error during LLM invocation: {e}")
         return {}
@@ -135,6 +183,6 @@ def get_llm_params_from_query(user_query: str) -> dict:
         return {}
     
     # Store in cache
-    llm_response_cache[user_query] = params
+    llm_response_cache[cache_key] = params
     return params
 
