@@ -46,7 +46,8 @@
     </script>
     <script>
     document.addEventListener('DOMContentLoaded', async () => {
-        const testQueries = [
+        const testQueries = [];
+        /*const testQueries = [
             "looking for used manual cars",
             "New Honda cars for sale",
 "Used Honda Civic for sale",
@@ -98,7 +99,7 @@
 "Electric Honda SUV in California",
 "show me certified cars between $25k and $45k and having miles below 2k",
 "show me used civic sedan vehicles under $40000 having only 20000 miles"
-        ];
+        ];*/
 
         const resultsContainer = document.getElementById('test-results'); 
 
@@ -112,7 +113,7 @@
             return;
         }
 
-        resultsContainer.innerHTML = '<h2>Test Query Results:</h2>';
+       /* resultsContainer.innerHTML = '<h2>Test Query Results:</h2>';*/
 
         for (const query of testQueries) {
             try {
