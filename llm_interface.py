@@ -70,16 +70,19 @@ Price Information (contains $, money terms, or payment context):
 
 Mileage Information (contains miles/mileage terms, NOT dollar signs):
 - Must explicitly mention "miles", "mileage", "km", or "kilometers"
-- Examples: "under 50000 miles", "low mileage", "100k miles"
-- Range format ('between 30000 and 60000 miles'): populate 'mileagemin' and 'mileagemax'
-- Upper limit ('under 50000 miles', 'less than 100k miles'): populate 'mileagemax' with number only
-- Lower limit ('over 20000 miles', 'more than 50k miles'): populate 'mileagemin' with number only
+- 🚫 CRITICAL: ONLY include mileagemin OR mileagemax when EXPLICITLY mentioned, NOT BOTH unless it's a range
+- Range format ('between 30000 and 60000 miles'): populate BOTH 'mileagemin' and 'mileagemax'
+- Upper limit ONLY ('under 50000 miles', 'below 100k miles'): populate 'mileagemax' ONLY, do NOT include mileagemin
+- Lower limit ONLY ('over 20000 miles', 'more than 50k miles'): populate 'mileagemin' ONLY, do NOT include mileagemax
+- 🚫 DO NOT guess or infer mileage ranges when only one bound is specified
 
 EXAMPLES:
 ❌ WRONG: "under $30000" → mileagemax: 30000
 ✅ CORRECT: "under $30000" → paymentmax: 30000
 ❌ WRONG: "50000 miles" → paymentmax: 50000  
 ✅ CORRECT: "50000 miles" → mileagemax: 50000
+❌ WRONG: "below 75000 miles" → mileagemin: 50000, mileagemax: 75000
+✅ CORRECT: "below 75000 miles" → mileagemax: 75000 (ONLY)
 
 IMPORTANT RULES:
 🚫 CRITICAL: Do NOT include 'transmissions' field unless user specifically mentions transmission (manual, automatic, CVT, etc.)
