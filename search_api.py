@@ -824,10 +824,10 @@ def build_inventory_url(base_url, params):
             continue
             
         filtered[k_lower] = val_str_lower
-    return f"{base_url}?{urlencode(filtered)}"
+    return f"{base_url}&{urlencode(filtered)}"
 
 @app.post("/api/search")
 async def search(request: QueryRequest):
     params = extract_params(request.query)
-    url = build_inventory_url("https://www.paragonhonda.com/inventory", params)
+    url = build_inventory_url("https://www.paragonhonda.com/inventory?paymenttype=cash", params)
     return {"url": url, "params": params}

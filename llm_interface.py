@@ -28,6 +28,7 @@ FIELD-SPECIFIC INSTRUCTIONS:
    - If query mentions 'new': value should be 'new'
 
 2. TRANSMISSIONS FIELD:
+   🚫 DO NOT include 'transmissions' unless user specifically mentions transmission type
    - Allowed values: "manual", "automatic", or "cvt"
    - Map alternative terms: 'stick shift' → manual, 'auto' → automatic
    - Special rule: If user mentions 'cvt' OR 'automatic', return "cvt,automatic" (both values)
@@ -35,6 +36,7 @@ FIELD-SPECIFIC INSTRUCTIONS:
    - Ensure CVT goes in 'transmissions' field, NOT 'vehicletypes'
 
 3. DRIVETRAINS FIELD:
+   🚫 DO NOT include 'drivetrains' unless user specifically mentions drivetrain type
    - Allowed values: "4wd", "awd", "2wd", "fwd", or "rwd"
    - Map alternative terms:
      • 'four-wheel drive' → 4wd
@@ -56,21 +58,37 @@ FIELD-SPECIFIC INSTRUCTIONS:
 
 PRICE AND MILEAGE EXTRACTION:
 
-Price Information:
-- Range format ('between X and Y' or 'X to Y'): populate 'paymentmin' with X and 'paymentmax' with Y
-- Upper limit ('under X', 'around X', 'less than X', 'at most X', 'below X'): populate 'paymentmax' with X
-- Lower limit ('over X', 'starting at X', 'more than X', 'at least X'): populate 'paymentmin' with X
+🚨 CRITICAL: DOLLAR AMOUNTS ($) ARE ALWAYS PRICE, NOT MILEAGE!
 
-Mileage Information:
-- Range format ('between X and Y miles' or 'X to Y miles'): populate 'mileagemin' with X and 'mileagemax' with Y
-- Upper limit ('under X miles', 'less than X miles', 'at most X miles', 'below X miles'): populate 'mileagemax' with X
-- Lower limit ('over X miles', 'starting at X miles', 'more than X miles', 'at least X miles'): populate 'mileagemin' with X
+Price Information (contains $, money terms, or payment context):
+- Dollar signs ($): "$30000" → paymentmax: 30000
+- Money terms: "30k budget", "budget of 25000" → payment fields
+- Payment context: "monthly payment", "financing", "lease"
+- Range format ('between $X and $Y'): populate 'paymentmin' with X and 'paymentmax' with Y
+- Upper limit ('under $30000', 'below $25k'): populate 'paymentmax' with number only
+- Lower limit ('over $20000', 'starting at $15k'): populate 'paymentmin' with number only
+
+Mileage Information (contains miles/mileage terms, NOT dollar signs):
+- Must explicitly mention "miles", "mileage", "km", or "kilometers"
+- Examples: "under 50000 miles", "low mileage", "100k miles"
+- Range format ('between 30000 and 60000 miles'): populate 'mileagemin' and 'mileagemax'
+- Upper limit ('under 50000 miles', 'less than 100k miles'): populate 'mileagemax' with number only
+- Lower limit ('over 20000 miles', 'more than 50k miles'): populate 'mileagemin' with number only
+
+EXAMPLES:
+❌ WRONG: "under $30000" → mileagemax: 30000
+✅ CORRECT: "under $30000" → paymentmax: 30000
+❌ WRONG: "50000 miles" → paymentmax: 50000  
+✅ CORRECT: "50000 miles" → mileagemax: 50000
 
 IMPORTANT RULES:
+🚫 CRITICAL: Do NOT include 'transmissions' field unless user specifically mentions transmission (manual, automatic, CVT, etc.)
+🚫 CRITICAL: Do NOT include 'drivetrains' field unless user specifically mentions drivetrain (AWD, FWD, 4WD, etc.)
+🚫 CRITICAL: Do NOT include 'vehicletypes' field unless user specifically mentions vehicle type (sedan, SUV, truck, etc.)
 - Do NOT guess or fill in any values that are not present in the query
 - Return ONLY a single, valid JSON object
 - NO comments, explanations, or non-JSON text within or around the JSON
-- Use these keys: 'year', 'make', 'model', 'trim', 'color', 'vehicletypes', 'transmissions', 'featuresubcategories', 'type', 'paymentmin', 'paymentmax', 'mileagemin', 'mileagemax', 'drivetrains'
+- Use these keys ONLY when explicitly mentioned: 'year', 'make', 'model', 'trim', 'color', 'vehicletypes', 'transmissions', 'featuresubcategories', 'type', 'paymentmin', 'paymentmax', 'mileagemin', 'mileagemax', 'drivetrains'
 - All keys and string values in the JSON should be lowercase
 
 Query: {query}""",
