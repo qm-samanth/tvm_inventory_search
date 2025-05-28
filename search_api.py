@@ -754,6 +754,18 @@ def extract_params(user_query):
                 print(f"[DEBUG] Removing trim (\'{llm_trim_val}\') as it duplicates the detected type (\'{current_type}\').")
                 params.pop('trim', None) # Use None to avoid KeyError if trim was already removed
 
+    # Step 4.2: Check if trim contains vehicle types (which is incorrect)
+    if llm_trim_val and isinstance(llm_trim_val, str):
+        llm_trim_lower = llm_trim_val.lower()
+        # Check if the trim value is actually a vehicle type
+        if llm_trim_lower in [vt.lower() for vt in SUPPORTED_TYPES]:
+            print(f"[DEBUG] Removing trim ('{llm_trim_val}') as it's actually a vehicle type, should be in vehicletypes field.")
+            params.pop('trim', None)
+            # If vehicletypes field doesn't exist, add it with the correct value
+            if 'vehicletypes' not in params:
+                params['vehicletypes'] = llm_trim_lower
+                print(f"[DEBUG] Moved '{llm_trim_lower}' from trim to vehicletypes field.")
+
     # Step 6: Validate and filter vehicletypes
     # Only populate vehicletypes if a supported type is EXPLICITLY mentioned in the query.
     if 'vehicletypes' in params: # Check if LLM even provided it as a starting point
