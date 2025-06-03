@@ -1,13 +1,22 @@
-Step 1: User Enters a Search Query
-The user types a natural language search (e.g., “Show me blue SUVs from 2020 under $30000”) into a search box on your web page.
-Step 2: Send Query to Backend API
-Your JavaScript frontend sends the user’s query to a backend API endpoint (e.g., /api/search) using a POST request.
-Step 3: Backend Processes the Query
-The backend API receives the query.
-It uses LangChain and your local LLM to extract structured parameters (like year, color, body style, price) from the query.
-Step 4: Build the Inventory URL
-The backend maps the extracted parameters to your inventory search URL as query parameters (e.g., domain.com?year=2020&bodystyle=suv&paymentmax=30000&color=blue).
-Step 5: Return URL to Frontend
-The backend returns the constructed URL as a JSON response (e.g., { "url": "https://domain.com?year=2020&bodystyle=suv&paymentmax=30000&color=blue" }).
-Step 6: Frontend Redirects or Reloads
-Your JavaScript receives the URL and reloads or redirects the page to the new URL, displaying the filtered inventory.
+# Vehicle Inventory Search Application Dependencies
+
+# FastAPI for web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Data validation and serialization
+pydantic==2.11.5
+
+# LangChain for LLM integration
+langchain==0.3.25
+langchain-google-genai==2.0.4
+
+# Additional dependencies for specific functionality
+google-generativeai>=0.3.0
+
+# Standard library extensions (if needed)
+python-multipart==0.0.6
+
+# Optional: For development and testing
+# pytest==7.4.0
+# pytest-asyncio==0.21.0

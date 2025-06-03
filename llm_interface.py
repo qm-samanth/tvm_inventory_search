@@ -2,23 +2,16 @@ import re
 import json
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 
-def initialize_llm_with_model(model_name: str):
-    """Initialize the LLM with a specific model name."""
-    if model_name.startswith("gemini"):
-        print(f"[DEBUG] Initializing {model_name}...")
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=0.1,
-            google_api_key="AIzaSyBLUvd17J8wC8dcGLnIYue5jEZfyfMmsrs"
-        )
-    elif model_name.startswith("llama"):
-        print(f"[DEBUG] Initializing {model_name}...")
-        return OllamaLLM(model=model_name)
-    else:
-        raise ValueError(f"Unsupported model: {model_name}. Supported models: gemini-1.5-flash, llama3.2")
+def initialize_llm_with_model(model_name: str = "gemini-1.5-flash"):
+    """Initialize the LLM with Google Gemini model."""
+    print(f"[DEBUG] Initializing {model_name}...")
+    return ChatGoogleGenerativeAI(
+        model=model_name,
+        temperature=0.1,
+        google_api_key="AIzaSyBLUvd17J8wC8dcGLnIYue5jEZfyfMmsrs"
+    )
 
 # --- LLM Cache ---
 # Simple in-memory cache. For a production system, consider a more robust
@@ -115,24 +108,22 @@ def get_llm_params_from_query(user_query: str, model_name: str = None) -> dict:
     Args:
         user_query: The user's search query
         model_name: Optional model to use. Defaults to "gemini-1.5-flash" if None.
-                   Supported values: "gemini-1.5-flash", "llama3.2"
+                   Supported values: "gemini-1.5-flash", "gemini-1.5-pro"
     """
     
     # Use specific model if provided, otherwise use default
-    if model_name:
+    if model_name and model_name.startswith("gemini"):
         try:
             current_llm = initialize_llm_with_model(model_name)
-            provider = "gemini" if model_name.startswith("gemini") else "ollama"
             print(f"[DEBUG] Using specific model: {model_name}")
         except Exception as e:
             print(f"[DEBUG] Error initializing model {model_name}: {e}")
             # Fallback to default model
             model_name = "gemini-1.5-flash"
             current_llm = initialize_llm_with_model(model_name)
-            provider = "gemini"
             print(f"[DEBUG] Falling back to default model: {model_name}")
     else:
-        # Default to Gemini if no model specified
+        # Default to Gemini if no model specified or unsupported model
         model_name = "gemini-1.5-flash"
         current_llm = initialize_llm_with_model(model_name)
         provider = "gemini"
@@ -146,20 +137,13 @@ def get_llm_params_from_query(user_query: str, model_name: str = None) -> dict:
         print(f"[DEBUG] Returning cached LLM response for query: {user_query}")
         return llm_response_cache[cache_key]
 
-    print(f"[DEBUG] Querying LLM with provider '{provider}' (not cached or cache cleared): {user_query}")
+    print(f"[DEBUG] Querying LLM with Gemini (not cached or cache cleared): {user_query}")
     try:
         formatted_prompt = prompt.format(query=user_query)
         response = current_llm.invoke(formatted_prompt)
         
-        # Handle different response types based on provider
-        if provider == "gemini":
-            # ChatGoogleGenerativeAI returns a message object, extract the content
-            response_text = response.content if hasattr(response, 'content') else str(response)
-        elif provider == "ollama":
-            # OllamaLLM returns a string directly
-            response_text = response
-        else:
-            response_text = str(response)
+        # ChatGoogleGenerativeAI returns a message object, extract the content
+        response_text = response.content if hasattr(response, 'content') else str(response)
             
     except Exception as e:
         print(f"[DEBUG] Error during LLM invocation: {e}")
