@@ -915,7 +915,7 @@ def build_inventory_url(base_url, params):
 @app.post("/api/search")
 async def search(request: QueryRequest):
     params = extract_params(request.query, request.model)
-    url = build_inventory_url("https://www.gaudinford.com/inventory?paymenttype=cash", params)
+    url = build_inventory_url("https://www.paragonhonda.com/inventory?paymenttype=cash", params)
     return {"url": url, "params": params, "model_used": request.model or "default"}
 
 @app.get("/api/models")
